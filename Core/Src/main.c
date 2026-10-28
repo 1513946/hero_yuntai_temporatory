@@ -32,6 +32,7 @@
 /* USER CODE BEGIN Includes */
 #include "can_init.h"
 #include "dt7_remote_read.h"
+#include <stm32f4xx_hal_rcc.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/

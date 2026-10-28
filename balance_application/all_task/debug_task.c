@@ -1,15 +1,23 @@
 #include "debug_task.h"
 #include "ins_task.h"
+#include "dt7_remote_read.h"
 // extern UART_HandleTypeDef huart1;
 // extern DMA_HandleTypeDef hdma_usart6_tx;
 
 void Crg_test_Task(void const * argument)
 {
     int b=0;
+	fp32 channels[5];
+	const RC_ctrl_t *remote = get_dt7_remote_control_point();
 	while(1)
 	{
+		channels[0] = (fp32)remote->rc.ch[0];
+        channels[1] = (fp32)remote->rc.ch[1];
+        channels[2] = (fp32)remote->rc.ch[2];
+        channels[3] = (fp32)remote->rc.ch[3];
+		channels[4] = (fp32)remote->rc.ch[4];
         ist8310_data[0]=b++;
-		debug_to_vofa(ist8310_data,3);
+		debug_to_vofa(channels, 5);
 		vTaskDelay(10); //·¢ËÍÆµÂÊ100hz
 	}
 }
