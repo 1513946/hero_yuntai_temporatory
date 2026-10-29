@@ -130,6 +130,7 @@ static void mini_chassis_mode_set(gimbal_c_send_data_t *gimbal_send_data,gimbal_
 			{
 				gimbal_send_data->cap_mode=0;
 			}
+			
 			if(mini_gimbal->gimbal_dt7_remote_control->rc.ch[4]<-300)
 			{
 				gimbal_send_data->top_mode=1;
