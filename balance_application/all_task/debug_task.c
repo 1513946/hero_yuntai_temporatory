@@ -1,14 +1,18 @@
 #include "debug_task.h"
 #include "ins_task.h"
 #include "dt7_remote_read.h"
+#include "can_user.h"
+
+extern gimbal_c_send_data_t gimbal_send_chassis_data;
 // extern UART_HandleTypeDef huart1;
 // extern DMA_HandleTypeDef hdma_usart6_tx;
 
 void Crg_test_Task(void const * argument)
 {
     int b=0;
-	fp32 channels[5];
+	fp32 channels[CH_COUNT];
 	const RC_ctrl_t *remote = get_dt7_remote_control_point();
+    const motor_measure_t *yaw_motor = get_motor_gimbal_yaw_measure_point();
 	while(1)
 	{
 		channels[0] = (fp32)remote->rc.ch[0];
@@ -17,7 +21,10 @@ void Crg_test_Task(void const * argument)
         channels[3] = (fp32)remote->rc.ch[3];
 		channels[4] = (fp32)remote->rc.ch[4];
         ist8310_data[0]=b++;
-		debug_to_vofa(channels, 5);
+		channels[5] = (fp32)yaw_motor->ecd;
+        channels[6] = (fp32)gimbal_send_chassis_data.top_mode;
+        channels[7] = (fp32)remote->rc.s[0];
+		debug_to_vofa(channels, CH_COUNT);
 		vTaskDelay(10); //·¢ËÍÆµÂÊ100hz
 	}
 }

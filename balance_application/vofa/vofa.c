@@ -1,6 +1,6 @@
 #include "vofa.h"
 
-fp32 send_data_msg[4]={1.1,2,4,5};
+//fp32 send_data_msg[4]={1.1,2,4,5};
 extern UART_HandleTypeDef huart6;
 extern UART_HandleTypeDef huart1;
 extern DMA_HandleTypeDef hdma_usart6_tx;

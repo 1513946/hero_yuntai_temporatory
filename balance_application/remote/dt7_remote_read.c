@@ -6,14 +6,19 @@ extern UART_HandleTypeDef huart3;
 extern DMA_HandleTypeDef hdma_usart3_rx;
 
 RC_ctrl_t dt7;
+volatile uint32_t dt7_rx_frame_count = 0;
+volatile uint32_t dt7_rx_bad_length_count = 0;
+volatile uint32_t dt7_rx_invalid_data_count = 0;
+volatile uint32_t dt7_rx_uart_error_count = 0;
+volatile uint16_t dt7_rx_last_length = 0;
 
-static void solve_dt7_data(volatile const uint8_t *sbus_buf, RC_ctrl_t *dt7); //进行解码
+static uint8_t solve_dt7_data(volatile const uint8_t *sbus_buf, RC_ctrl_t *dt7); //进行解码
 
 static uint8_t sbus_rx_buffer[2][SBUS_RX_BUF_NUM];  //缓冲数组
 
 void dt7_remote_read_init(void)
 {
-    Double_dma_init(&huart3,&hdma_usart3_rx,sbus_rx_buffer[0],sbus_rx_buffer[1],RC_FRAME_LENGTH);  //双缓冲加载
+    Double_dma_init(&huart3,&hdma_usart3_rx,sbus_rx_buffer[0],sbus_rx_buffer[1],SBUS_RX_BUF_NUM);  //双缓冲加载
 }
 
 
@@ -25,111 +30,107 @@ const RC_ctrl_t *get_dt7_remote_control_point(void)
 //串口中断
 void USART3_IRQHandler(void)
 {
-    if(huart3.Instance->SR & UART_FLAG_RXNE)//接收到数据
-    {
-        __HAL_UART_CLEAR_PEFLAG(&huart3);
-    }
-    else if(USART3->SR & UART_FLAG_IDLE)
-    {
-        static uint16_t this_time_rx_len = 0;
+    uint32_t status = huart3.Instance->SR;
+    uint32_t error_flags = status & (UART_FLAG_PE | UART_FLAG_FE |
+                                     UART_FLAG_NE | UART_FLAG_ORE);
+    uint16_t received_length;
+    uint8_t completed_buffer;
 
-        __HAL_UART_CLEAR_PEFLAG(&huart3);
-
-        if ((hdma_usart3_rx.Instance->CR & DMA_SxCR_CT) == RESET)
+    if ((status & UART_FLAG_IDLE) == 0U)
+    {
+        if (error_flags != 0U)
         {
-            /* Current memory buffer used is Memory 0 */
-    
-            //disable DMA
-            //失效DMA
-            __HAL_DMA_DISABLE(&hdma_usart3_rx);
-
-            //get receive data length, length = set_data_length - remain_length
-            //获取接收数据长度,长度 = 设定长度 - 剩余长度
-            this_time_rx_len = SBUS_RX_BUF_NUM - hdma_usart3_rx.Instance->NDTR;
-
-            //reset set_data_lenght
-            //重新设定数据长度
-            hdma_usart3_rx.Instance->NDTR = SBUS_RX_BUF_NUM;
-
-            //set memory buffer 1
-            //设定缓冲区1
-            hdma_usart3_rx.Instance->CR |= DMA_SxCR_CT;
-            
-            //enable DMA
-            //使能DMA
-            __HAL_DMA_ENABLE(&hdma_usart3_rx);
-
-            if(this_time_rx_len == RC_FRAME_LENGTH)  //接收到一帧数据后解码
-            {
-                solve_dt7_data(sbus_rx_buffer[0], &dt7);
-            }
+            __HAL_UART_CLEAR_PEFLAG(&huart3);
+            dt7_rx_uart_error_count++;
         }
-        else
-        {
-            /* Current memory buffer used is Memory 1 */
-            //disable DMA
-            //失效DMA
-            __HAL_DMA_DISABLE(&hdma_usart3_rx);
-
-            //get receive data length, length = set_data_length - remain_length
-            //获取接收数据长度,长度 = 设定长度 - 剩余长度
-            this_time_rx_len = SBUS_RX_BUF_NUM - hdma_usart3_rx.Instance->NDTR; //不定长数据接收
-
-            //reset set_data_lenght
-            //重新设定数据长度
-            hdma_usart3_rx.Instance->NDTR = SBUS_RX_BUF_NUM;
-
-            //set memory buffer 0
-            //设定缓冲区0
-            DMA1_Stream1->CR &= ~(DMA_SxCR_CT);
-            
-            //enable DMA
-            //使能DMA
-            __HAL_DMA_ENABLE(&hdma_usart3_rx);
-
-            if(this_time_rx_len == RC_FRAME_LENGTH)
-            {
-                //处理遥控器数据
-                solve_dt7_data(sbus_rx_buffer[1], &dt7);
-            }
-			
-        }
-    }
-}
-
-static void  solve_dt7_data(volatile const uint8_t *sbus, RC_ctrl_t *dt7)
-{
-    //114  第0
-    if(sbus==NULL||dt7==NULL)
-    {
         return;
+    }
+
+    /* Clearing IDLE also clears the UART error flags (SR then DR). */
+    __HAL_UART_CLEAR_IDLEFLAG(&huart3);
+    __HAL_DMA_DISABLE(&hdma_usart3_rx);
+    while ((hdma_usart3_rx.Instance->CR & DMA_SxCR_EN) != 0U)
+    {
+    }
+
+    completed_buffer = ((hdma_usart3_rx.Instance->CR & DMA_SxCR_CT) != 0U) ? 1U : 0U;
+    received_length = SBUS_RX_BUF_NUM - hdma_usart3_rx.Instance->NDTR;
+    dt7_rx_last_length = received_length;
+
+    /* Use the same DMA capacity at startup and after every IDLE event. */
+    hdma_usart3_rx.Instance->NDTR = SBUS_RX_BUF_NUM;
+    hdma_usart3_rx.Instance->CR ^= DMA_SxCR_CT;
+    __HAL_DMA_ENABLE(&hdma_usart3_rx);
+
+    if (error_flags != 0U)
+    {
+        dt7_rx_uart_error_count++;
+        return;
+    }
+    if (received_length != RC_FRAME_LENGTH)
+    {
+        dt7_rx_bad_length_count++;
+        return;
+    }
+    if (solve_dt7_data(sbus_rx_buffer[completed_buffer], &dt7) != 0U)
+    {
+        dt7_rx_frame_count++;
     }
     else
     {
-        dt7->rc.ch[0]=((sbus[0])|(sbus[1]<<8)) & 0x7ff;      //左边   ——>0
-        dt7->rc.ch[1]=((sbus[1]>>3)|(sbus[2]<<5)) &0x7ff;    
-
-        dt7->rc.ch[2]=((sbus[2]>>6)|(sbus[3]<<2)|(sbus[4]<<10)) &0x7ff;   //右边   ——>2
-        dt7->rc.ch[3]=((sbus[4]>>1)|(sbus[5]<<7)) &0x7ff;
-
-        dt7->rc.s[0]= ((sbus[5]>>4)) &0x0003;  //左边
-        dt7->rc.s[1]=((sbus[5]>>6))  &0x0003;  //右边
-
-        dt7->mouse.x=((sbus[6])|(sbus[7]<<8));
-        dt7->mouse.y=((sbus[8])|(sbus[9]<<8));
-        dt7->mouse.z=((sbus[10])|(sbus[11]<<8));
-        dt7->mouse.press_l_last=dt7->mouse.press_l;
-        dt7->mouse.press_r_last = dt7->mouse.press_r;
-        dt7->mouse.press_l=sbus[12];
-        dt7->mouse.press_r=sbus[13];
-        dt7->key.v = sbus[14] | (sbus[15] << 8);                    //键盘通道
-        dt7->rc.ch[4] = sbus[16] | (sbus[17] << 8);                 //波轮
-
-        dt7->rc.ch[0] -= RC_CH_VALUE_OFFSET;
-        dt7->rc.ch[1] -= RC_CH_VALUE_OFFSET;
-        dt7->rc.ch[2] -= RC_CH_VALUE_OFFSET;
-        dt7->rc.ch[3] -= RC_CH_VALUE_OFFSET;
-        dt7->rc.ch[4] -= RC_CH_VALUE_OFFSET;
-
+        dt7_rx_invalid_data_count++;
     }
+}
+
+static uint8_t solve_dt7_data(volatile const uint8_t *sbus, RC_ctrl_t *remote)
+{
+    RC_ctrl_t decoded = {0};
+    uint16_t wheel_raw;
+    uint8_t i;
+
+    if (sbus == NULL || remote == NULL)
+    {
+        return 0U;
+    }
+
+    decoded.rc.ch[0] = ((sbus[0]) | (sbus[1] << 8)) & 0x07ff;
+    decoded.rc.ch[1] = ((sbus[1] >> 3) | (sbus[2] << 5)) & 0x07ff;
+    decoded.rc.ch[2] = ((sbus[2] >> 6) | (sbus[3] << 2) | (sbus[4] << 10)) & 0x07ff;
+    decoded.rc.ch[3] = ((sbus[4] >> 1) | (sbus[5] << 7)) & 0x07ff;
+    decoded.rc.s[0] = (sbus[5] >> 4) & 0x03;
+    decoded.rc.s[1] = (sbus[5] >> 6) & 0x03;
+    wheel_raw = sbus[16] | (sbus[17] << 8);
+    if (wheel_raw > 0x07ffU)
+    {
+        return 0U;
+    }
+    decoded.rc.ch[4] = wheel_raw;
+
+    for (i = 0; i < 5U; i++)
+    {
+        decoded.rc.ch[i] -= RC_CH_VALUE_OFFSET;
+        if (decoded.rc.ch[i] < -700 || decoded.rc.ch[i] > 700)
+        {
+            return 0U;
+        }
+    }
+    if (decoded.rc.s[0] < RC_SW_UP || decoded.rc.s[0] > RC_SW_MID ||
+        decoded.rc.s[1] < RC_SW_UP || decoded.rc.s[1] > RC_SW_MID ||
+        sbus[12] > 1U || sbus[13] > 1U)
+    {
+        return 0U;
+    }
+
+    decoded.mouse.x = sbus[6] | (sbus[7] << 8);
+    decoded.mouse.y = sbus[8] | (sbus[9] << 8);
+    decoded.mouse.z = sbus[10] | (sbus[11] << 8);
+    decoded.mouse.press_l_last = remote->mouse.press_l;
+    decoded.mouse.press_r_last = remote->mouse.press_r;
+    decoded.mouse.press_l = sbus[12];
+    decoded.mouse.press_r = sbus[13];
+    decoded.key.v = sbus[14] | (sbus[15] << 8);
+
+    /* Publish only a complete, plausible frame; keep the previous frame on error. */
+    *remote = decoded;
+    return 1U;
 }

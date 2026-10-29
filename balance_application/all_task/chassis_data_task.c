@@ -1,4 +1,5 @@
 #include "chassis_data_task.h"
+#include "../can/can_user.h"
 
 #define Remote_Deadband_Limit(mag_input,msg_output,dead_control) \
 {                                                                \

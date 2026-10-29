@@ -70,7 +70,7 @@
 
 // ============================ 云台零点设置 ============================
 #define YAW_ZERO_ANGLE_SET    6533             // YAW轴零点位置（9025电机，待设置）
-#define YAW_CHANGE_ANGLE_SET  39301            // YAW轴掉头零点位置（9025电机，待设置）
+#define YAW_CHANGE_ANGLE_SET  0            // YAW轴掉头零点位置（9025电机，待设置）
 #define YAW_CHANGE_WAIT_TIME  1600             // 掉头等待时间（控制周期数）
 #define PITCH_ZERO_ANGLE_SET  1891             // PITCH轴零点位置
 
