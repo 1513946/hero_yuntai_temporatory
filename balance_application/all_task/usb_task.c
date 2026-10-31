@@ -57,7 +57,7 @@ void Usb_Task(void const * argument)
 
 static void Usb_Send_Data(void)
 { 
-  shoot_speed=10.40f;
+  shoot_speed=16.0f;
   gimbal_INT_gyro_angle_point=get_INS_angle_point();
 	gimbal_INT_q_point=get_INS_quat_point();
 	gimbal_INT_gyro_point=get_gyro_data_point();

@@ -34,7 +34,7 @@
 #include "c_data_typedef.h"
 #include "cmsis_os.h"
 #include "ins_task.h"
-#define CH_COUNT 8 //最多发送数据通道
+#define CH_COUNT 11 //最多发送数据通道
 
 typedef struct 
 {

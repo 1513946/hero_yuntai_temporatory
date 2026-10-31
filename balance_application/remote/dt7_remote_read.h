@@ -64,7 +64,7 @@ typedef __packed struct
     {
         int16_t ch[5];
         //ÓÒºá ÓÒ×Ý ×óºá ×ó×Ý
-        char s[2];
+        char s[2];//²¦¸Ë
     } rc; //Ò£¿ØÆ÷
 
     __packed struct
@@ -85,13 +85,6 @@ typedef __packed struct
 
 } RC_ctrl_t;
 extern RC_ctrl_t dt7;
-
-/* Keil Watch: valid frames, rejected frames and UART errors. */
-extern volatile uint32_t dt7_rx_frame_count;
-extern volatile uint32_t dt7_rx_bad_length_count;
-extern volatile uint32_t dt7_rx_invalid_data_count;
-extern volatile uint32_t dt7_rx_uart_error_count;
-extern volatile uint16_t dt7_rx_last_length;
 
 
 extern void dt7_remote_read_init(void);  //dt7Ò£¿ØÆ÷³õÊ¼»¯ ¿ªÆôdmaË«»º³å
