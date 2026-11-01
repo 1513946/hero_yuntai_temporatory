@@ -2,6 +2,7 @@
 #include "ins_task.h"
 #include "dt7_remote_read.h"
 #include "can_user.h"
+#include "usb_task.h"
 
 extern gimbal_c_send_data_t gimbal_send_chassis_data;
 extern volatile uint16_t wheel_raw_dbg;
@@ -16,6 +17,7 @@ void Crg_test_Task(void const * argument)
     const motor_measure_t *yaw_motor = get_motor_gimbal_yaw_measure_point();
     const motor_measure_t *pitch_motor = get_motor_gimbal_pitch_measure_point();
     const fp32 *ins_angle = get_INS_angle_point();
+    const autom_pc *pc = get_crg_pc_point();
 	while(1)
 	{
 		ist8310_data[0]=b++;
@@ -25,18 +27,14 @@ void Crg_test_Task(void const * argument)
         channels[3] = (fp32)remote->rc.ch[3];
 		channels[4] = (fp32)remote->rc.ch[4];
 		channels[5] = (fp32)yaw_motor->ecd;
-        channels[6] = (fp32)gimbal_send_chassis_data.top_mode;
-        channels[7] = (fp32)remote->rc.s[0];
-        channels[8] = ins_angle[INS_YAW_ADDRESS_OFFSET] * 57.295779513f;   // yaw IMU angle (deg)
-        channels[9] = ins_angle[INS_PITCH_ADDRESS_OFFSET] * 57.295779513f; // pitch IMU angle (deg)
-        channels[10] = (fp32)pitch_motor->ecd;                          // pitch encoder count
-		uint16_t raw = wheel_raw_dbg;
+	    channels[6] = (fp32)pitch_motor->ecd;                          // pitch encoder count
+        channels[7] = (fp32)gimbal_send_chassis_data.top_mode;
+        channels[8] = (fp32)remote->rc.s[0];
+        channels[9] = ins_angle[INS_YAW_ADDRESS_OFFSET] * 57.295779513f;   // yaw IMU angle (deg)
+        channels[10] = ins_angle[INS_PITCH_ADDRESS_OFFSET] * 57.295779513f; // pitch IMU angle (deg)
+        channels[11] = pc->pc_yaw * 57.295779513f;   // vision target yaw (deg), received as rad
+        channels[12] = pc->pc_pitch * 57.295779513f; // vision target pitch (deg), received as rad
 
-		channels[0] = (fp32)raw;                    // 原始16位值
-		channels[1] = (fp32)(raw & 0x07FFU);         // 截取低11位后的值
-		channels[2] = (fp32)((int32_t)raw - 1024);   // 原始值直接减中值
-		channels[3] = 1234.0f;                      // 确认新程序已经运行
-		channels[4] = (fp32)remote->rc.ch[4];        // 实际用于控制的拨轮值
 		debug_to_vofa(channels, CH_COUNT);
 		vTaskDelay(10); //发送频率100hz
 	}

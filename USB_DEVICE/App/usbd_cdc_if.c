@@ -281,6 +281,7 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 		memcpy(&hero_pc.pc_pitch_acc,&recive_data[22],4);
     //memcpy(&hero_pc.pc_distance,&recive_data[26],4);
 	}
+  
 	USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
 	USBD_CDC_ReceivePacket(&hUsbDeviceFS);
     return (USBD_OK);

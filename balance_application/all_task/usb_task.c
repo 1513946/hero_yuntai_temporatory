@@ -50,7 +50,8 @@ void Usb_Task(void const * argument)
 	}
  }
  
- const autom_pc *get_crg_pc_point(void)
+
+  const autom_pc *get_crg_pc_point(void)
 {
 	return (&hero_pc);
  }

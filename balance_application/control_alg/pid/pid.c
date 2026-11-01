@@ -112,6 +112,7 @@ fp32 pid_calc_gimbal(pid_type_def *user_pid,fp32 feed_back,fp32 set)  //角度归一
 		{
 			user_pid->error[0]=user_pid->error[0]+2*3.14159265358979f;
 		}
+        
         if(user_pid->mode==PID_POSITION) //位置式
         {
             user_pid->pout=user_pid->kp*user_pid->error[0];
