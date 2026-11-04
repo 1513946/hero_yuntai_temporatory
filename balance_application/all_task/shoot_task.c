@@ -358,34 +358,36 @@ static void shoot_bullet_control(hero_shoot_t *shooot_bullet_control)
     
     // 设置拨弹电机目标角度
     if(shooot_bullet_control->trigger_motor.fire_ban_hz == 1)
-    { if(switch_is_up(shooot_bullet_control->shoot_dt7_remote_control->rc.s[LEFT]))
+    {
+         if(switch_is_up(shooot_bullet_control->shoot_dt7_remote_control->rc.s[LEFT]))
         // 控制拨弹盘旋转一个弹仓位置（40度）
-       { if(__fabs(shooot_bullet_control->trigger_motor.trigger_motor_angle_set - 
+       { 
+        if(__fabs(shooot_bullet_control->trigger_motor.trigger_motor_angle_set - 
                  shooot_bullet_control->trigger_motor.add_angle) < 45)
-        {
-            shooot_bullet_control->trigger_motor.trigger_motor_angle_set += 45;
-        }
-        else
-        {
-            shooot_bullet_control->trigger_motor.trigger_motor_angle_set = 
-                shooot_bullet_control->trigger_motor.add_angle + 45;
-        }
-			}
-				else if (switch_is_down(shooot_bullet_control->shoot_dt7_remote_control->rc.s[LEFT]))
-				{
+            {
+                shooot_bullet_control->trigger_motor.trigger_motor_angle_set += 45;
+            }
+            else
+            {
+                shooot_bullet_control->trigger_motor.trigger_motor_angle_set = 
+                    shooot_bullet_control->trigger_motor.add_angle + 45;
+            }
+		}
+		else if (switch_is_down(shooot_bullet_control->shoot_dt7_remote_control->rc.s[LEFT]))
+		{
 					
-					if(__fabs(shooot_bullet_control->trigger_motor.trigger_motor_angle_set - 
-                 shooot_bullet_control->trigger_motor.add_angle) > 45)
-        {
-            shooot_bullet_control->trigger_motor.trigger_motor_angle_set -= 45;
-        }
-        else
-        {
-            shooot_bullet_control->trigger_motor.trigger_motor_angle_set = 
-                shooot_bullet_control->trigger_motor.add_angle - 45;
-        }
+            if(__fabs(shooot_bullet_control->trigger_motor.trigger_motor_angle_set - 
+                shooot_bullet_control->trigger_motor.add_angle) > 45)
+            {
+                shooot_bullet_control->trigger_motor.trigger_motor_angle_set -= 45;
+            }
+            else
+            {
+                shooot_bullet_control->trigger_motor.trigger_motor_angle_set = 
+                    shooot_bullet_control->trigger_motor.add_angle - 45;
+            }
 					
-				}
+		}
 				
 				
 			

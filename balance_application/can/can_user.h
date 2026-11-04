@@ -48,7 +48,7 @@ typedef enum
     /****  hcan2  底盘电机  ****/
     
     CAN2_yaw_motor_id=0x141,      //yaw轴电机
-    	CAN1_trigger_motor_id=0x201,//拨弹电机
+    CAN1_trigger_motor_id=0x201,//拨弹电机
 
     /*gimbal_motor_send_flag_id*/
 	//CAN1
