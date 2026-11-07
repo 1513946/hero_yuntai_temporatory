@@ -61,6 +61,8 @@ static CAN_TxHeaderTypeDef remote_to_chassis_tx_msg;
 static uint8_t remote_to_chassis_can_send_data[8];
 
 
+int cnt2 = 0;
+int id2 = 0;
 
 
 /*can_recive*/
@@ -71,6 +73,8 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, rx_data);
     if(hcan==&hcan1)  //不走滑环
     {
+						cnt2++;
+			id2 = rx_header.StdId;
         switch (rx_header.StdId)
         {
         case CAN1_fire_l_motor_id:  //202
@@ -105,6 +109,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     }
     else if(hcan==&hcan2)  //走滑环
     {
+
         switch (rx_header.StdId)
         {
        

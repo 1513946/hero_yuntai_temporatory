@@ -20,6 +20,9 @@ static void trigger_motor_turn_back(hero_shoot_t *shoot_block);        // 射击堵
 // 全局射击系统结构体
 hero_shoot_t hero_shoot;
 gimbal_control_t mini_gimbal;
+
+int cnt_shoot = 0;
+
 /**
   * @brief 射击系统任务
   * @param argument: 任务参数
@@ -42,9 +45,14 @@ void Shoot_Task(void const * argument)
         Shoot_Cacl_Loop(&hero_shoot);
          
         // 注释掉的实际CAN通信代码
-        CAN_cmd_shoot(hero_shoot.shoot_motor_1.give_current,hero_shoot.shoot_motor_2.give_current,hero_shoot.shoot_motor_3.give_current);
-        CAN_cmd_trigger(hero_shoot.trigger_motor.give_current, mini_gimbal.yaw_gimbal_motor.gimbal_motor_measure->ecd);
+       CAN_cmd_shoot(hero_shoot.shoot_motor_1.give_current,hero_shoot.shoot_motor_2.give_current,hero_shoot.shoot_motor_3.give_current);
+       
+       
+		
+		CAN_cmd_trigger(hero_shoot.trigger_motor.give_current, mini_gimbal.yaw_gimbal_motor.gimbal_motor_measure->ecd);
+
         
+       cnt_shoot++;
         vTaskDelay(SHOOT_LOOP_TIME);
     }
 }
@@ -317,10 +325,10 @@ static void shoot_power_set(hero_shoot_t *shoot_speed_set)
     {
         shoot_speed_set->trigger_motor.shoot_ban_hz = 1000; // 普通射击模式
     }
-		else
-		{
-			 shoot_speed_set->trigger_motor.shoot_ban_hz = 100;
-		}
+    else
+    {
+            shoot_speed_set->trigger_motor.shoot_ban_hz = 100;
+    }
 }
 
 /**
@@ -365,12 +373,12 @@ static void shoot_bullet_control(hero_shoot_t *shooot_bullet_control)
         if(__fabs(shooot_bullet_control->trigger_motor.trigger_motor_angle_set - 
                  shooot_bullet_control->trigger_motor.add_angle) < 45)
             {
-                shooot_bullet_control->trigger_motor.trigger_motor_angle_set += 45;
+                shooot_bullet_control->trigger_motor.trigger_motor_angle_set -= 45;
             }
             else
             {
                 shooot_bullet_control->trigger_motor.trigger_motor_angle_set = 
-                    shooot_bullet_control->trigger_motor.add_angle + 45;
+                    shooot_bullet_control->trigger_motor.add_angle - 45;
             }
 		}
 		else if (switch_is_down(shooot_bullet_control->shoot_dt7_remote_control->rc.s[LEFT]))
@@ -379,12 +387,12 @@ static void shoot_bullet_control(hero_shoot_t *shooot_bullet_control)
             if(__fabs(shooot_bullet_control->trigger_motor.trigger_motor_angle_set - 
                 shooot_bullet_control->trigger_motor.add_angle) > 45)
             {
-                shooot_bullet_control->trigger_motor.trigger_motor_angle_set -= 45;
+                shooot_bullet_control->trigger_motor.trigger_motor_angle_set += 45;
             }
             else
             {
                 shooot_bullet_control->trigger_motor.trigger_motor_angle_set = 
-                    shooot_bullet_control->trigger_motor.add_angle - 45;
+                    shooot_bullet_control->trigger_motor.add_angle + 45;
             }
 					
 		}
@@ -417,12 +425,12 @@ static void trigger_motor_turn_back(hero_shoot_t *shoot_block)
         {  if(switch_is_up(shoot_block->shoot_dt7_remote_control->rc.s[LEFT]))
             // 设置反转角度
            { shoot_block->trigger_motor.trigger_motor_angle_set = 
-                shoot_block->trigger_motor.add_angle - 45;}
+                shoot_block->trigger_motor.add_angle + 45;}
 					 else
 					 {
 						 
 						 shoot_block->trigger_motor.trigger_motor_angle_set = 
-                shoot_block->trigger_motor.add_angle +45;
+                shoot_block->trigger_motor.add_angle -45;
 					 }
         }
     }
