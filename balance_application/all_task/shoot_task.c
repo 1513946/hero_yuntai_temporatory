@@ -80,7 +80,7 @@ static void Shoot_Init(hero_shoot_t *shoot_init)
     shoot_init->fire_flag_change = 0;
     shoot_init->fire_flag_time = 0;
     
-    // 拨弹盘速度PID初始化
+     // 拨弹盘速度PID初始化
     static const fp32 trigger_speed_pid[3] = {TRIGGER_SPEED_PID_KP, TRIGGER_SPEED_PID_KI, TRIGGER_SPEED_PID_KD};
     pid_init(&shoot_init->trigger_motor.speed_pid, PID_POSITION, trigger_speed_pid, 
              TRIGGER_SPEED_PID_MAX_OUT, TRIGGER_SPEED_PID_MAX_IOUT);
