@@ -47,7 +47,7 @@ void Shoot_Task(void const * argument)
         // 注释掉的实际CAN通信代码
        CAN_cmd_shoot(hero_shoot.shoot_motor_1.give_current,hero_shoot.shoot_motor_2.give_current,hero_shoot.shoot_motor_3.give_current);
        
-       
+       hero_shoot.trigger_motor.give_current=LimitMax(hero_shoot.trigger_motor.give_current,2000);
 		
 		CAN_cmd_trigger(hero_shoot.trigger_motor.give_current, mini_gimbal.yaw_gimbal_motor.gimbal_motor_measure->ecd);
 
@@ -146,7 +146,7 @@ static void Shoot_Mode_Set(hero_shoot_t *shoot_mode)
     else  // 调试模式
     {
         // 左拨杆上为启动射击
-        if(switch_is_up(shoot_mode->shoot_dt7_remote_control->rc.s[LEFT])||(switch_is_down(shoot_mode->shoot_dt7_remote_control->rc.s[LEFT])&&(switch_is_down(shoot_mode->shoot_dt7_remote_control->rc.s[RIGHT]))))
+        if(switch_is_up(shoot_mode->shoot_dt7_remote_control->rc.s[LEFT])  ||  (switch_is_down(shoot_mode->shoot_dt7_remote_control->rc.s[LEFT])&&(switch_is_down(shoot_mode->shoot_dt7_remote_control->rc.s[RIGHT]))))
         {  
             shoot_mode->shoot_mode = SHOOT_START;
         }
@@ -227,7 +227,7 @@ static void Shoot_Control_Set(hero_shoot_t *shoot_control_set)
         shoot_power_set(shoot_control_set);         // 热量控制
         shoot_speed_set(shoot_control_set);         // 速度控制
         shoot_bullet_control(shoot_control_set);    // 射击频率控制
-        trigger_motor_turn_back(shoot_control_set); // 堵转检测控制
+        //trigger_motor_turn_back(shoot_control_set); // 堵转检测控制  临时关闭，调试
         
         // LQR控制器计算拨弹电机电流
         fp32 feed_back_triiger[3] = {
@@ -331,6 +331,7 @@ static void shoot_power_set(hero_shoot_t *shoot_speed_set)
     }
 }
 
+  float need_angle = 5.0f;
 /**
   * @brief 射击频率控制
   * @param shooot_bullet_control: 射击系统结构体指针
@@ -350,6 +351,8 @@ static void shoot_bullet_control(hero_shoot_t *shooot_bullet_control)
             // 启动射击计时
             shooot_bullet_control->trigger_motor.shoot_ban_time_hz = 1;
             shooot_bullet_control->trigger_motor.fire_ban_hz = 1;
+            //shoot_ban_time_hz：开始记录两次拨弹之间的间隔
+            //fire_ban_hz：标记本轮需要更新一次目标角度
         }
     }
     
@@ -370,29 +373,30 @@ static void shoot_bullet_control(hero_shoot_t *shooot_bullet_control)
          if(switch_is_up(shooot_bullet_control->shoot_dt7_remote_control->rc.s[LEFT]))
         // 控制拨弹盘旋转一个弹仓位置（40度）
        { 
+      
         if(__fabs(shooot_bullet_control->trigger_motor.trigger_motor_angle_set - 
-                 shooot_bullet_control->trigger_motor.add_angle) < 45)
+                 shooot_bullet_control->trigger_motor.add_angle) < need_angle)
             {
-                shooot_bullet_control->trigger_motor.trigger_motor_angle_set -= 45;
+                shooot_bullet_control->trigger_motor.trigger_motor_angle_set -= need_angle;
             }
             else
             {
                 shooot_bullet_control->trigger_motor.trigger_motor_angle_set = 
-                    shooot_bullet_control->trigger_motor.add_angle - 45;
+                    shooot_bullet_control->trigger_motor.add_angle - need_angle;
             }
 		}
 		else if (switch_is_down(shooot_bullet_control->shoot_dt7_remote_control->rc.s[LEFT]))
 		{
 					
             if(__fabs(shooot_bullet_control->trigger_motor.trigger_motor_angle_set - 
-                shooot_bullet_control->trigger_motor.add_angle) > 45)
+                shooot_bullet_control->trigger_motor.add_angle) > need_angle)
             {
-                shooot_bullet_control->trigger_motor.trigger_motor_angle_set += 45;
+                shooot_bullet_control->trigger_motor.trigger_motor_angle_set += need_angle;
             }
             else
             {
                 shooot_bullet_control->trigger_motor.trigger_motor_angle_set = 
-                    shooot_bullet_control->trigger_motor.add_angle + 45;
+                    shooot_bullet_control->trigger_motor.add_angle + need_angle;
             }
 					
 		}

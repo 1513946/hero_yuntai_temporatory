@@ -82,9 +82,9 @@
 #define SHOOT_ANGLE_ERROR           72.0f   // 射击角度误差限制（度）
 
 /*================================ 拨弹盘速度环PID参数（调试备用）=================================*/
-#define TRIGGER_SPEED_PID_KP        120.0f  // 比例系数
+#define TRIGGER_SPEED_PID_KP        0.0f  // 比例系数
 #define TRIGGER_SPEED_PID_KI        0.0f    // 积分系数
-#define TRIGGER_SPEED_PID_KD        0.5f    // 微分系数
+#define TRIGGER_SPEED_PID_KD        0.0f    // 微分系数
 #define TRIGGER_SPEED_PID_MAX_OUT   MAX_OUT // PID输出上限
 #define TRIGGER_SPEED_PID_MAX_IOUT  7000.0f // 积分项上限
 
@@ -105,7 +105,7 @@
 #define TRIGGLE_CURRENT_KP      0.02    // 电流环比例系数
 #define TRIGGLE_CURRENT_KI      0       // 电流环积分系数
 #define TRIGGLE_CURRENT_I_MAX   0       // 电流环积分上限
-#define TRIGGLE_CURRENT_OUT_MAX 30000   // 电流环输出上限
+#define TRIGGLE_CURRENT_OUT_MAX 10000   // 电流环输出上限  上限±16384
 
 /*================================ 摩擦轮电机PID参数 =================================*/
 // 右摩擦轮（电机1）参数

@@ -18,6 +18,7 @@ void Crg_test_Task(void const * argument)
     const motor_measure_t *pitch_motor = get_motor_gimbal_pitch_measure_point();
     const fp32 *ins_angle = get_INS_angle_point();
     const autom_pc *pc = get_crg_pc_point();
+    const motor_measure_t *trigger_motor = get_motor_gimbal_trigger_measure_point();
 	while(1)
 	{
 		ist8310_data[0]=b++;
