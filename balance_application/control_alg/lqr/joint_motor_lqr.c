@@ -144,8 +144,8 @@ fp32 lqr_cal(lqr_type_def *lqr,fp32 fd[3],fp32 set[3])
     {
         return 0;
     }
-    lqr_element_cal(&lqr->speed_lqr,fd[0],set[0]);
-    lqr_element_cal(&lqr->angle_lqr,fd[1],set[1]);
+    lqr_element_cal(&lqr->angle_lqr,fd[0],set[0]);
+    lqr_element_cal(&lqr->speed_lqr,fd[1],set[1]);
     lqr_element_cal(&lqr->current_lqr,fd[2],set[2]);
     lqr->out = lqr->speed_lqr.out + lqr->angle_lqr.out +lqr->current_lqr .out;      //分为LQR 速度 角度 电流 三值相加为输出
     LimitMax(lqr->out, lqr->max_out );

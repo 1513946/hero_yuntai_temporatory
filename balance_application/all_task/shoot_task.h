@@ -90,7 +90,7 @@
 
 /*================================ 拨弹盘LQR控制器参数 =================================*/
 // 速度环参数
-#define TRIGGLE_SPEED_KP        1000   // 速度环比例系数
+#define TRIGGLE_SPEED_KP        10   // 速度环比例系数
 #define TRIGGLE_SPEED_KI        0       // 速度环积分系数
 #define TRIGGLE_SPEED_I_MAX     0       // 速度环积分上限
 #define TRIGGLE_SPEED_OUT_MAX   100000  // 速度环输出上限
@@ -102,7 +102,7 @@
 #define TRIGGLE_ANGLE_OUT_MAX   100000  // 角度环输出上限
 
 // 电流环参数
-#define TRIGGLE_CURRENT_KP      0.02    // 电流环比例系数
+#define TRIGGLE_CURRENT_KP      0.0    // 电流环比例系数
 #define TRIGGLE_CURRENT_KI      0       // 电流环积分系数
 #define TRIGGLE_CURRENT_I_MAX   0       // 电流环积分上限
 #define TRIGGLE_CURRENT_OUT_MAX 10000   // 电流环输出上限  上限±16384
@@ -124,7 +124,7 @@
 #define FIRE3_SPEED_PID_KD      20.0f   // 微分系数
 
 // 摩擦轮PID公共参数
-#define FIRE_FIRE_PID_MAX_OUT  15000.0f // 输出电流上限
+#define FIRE_FIRE_PID_MAX_OUT  4000.0f // 输出电流上限
 #define FIRE_FIRE_PID_MAX_IOUT 3000.0f  // 积分项上限
 
 /*================================ 枚举类型定义 =================================*/
@@ -202,8 +202,8 @@ typedef struct
     fp32 dials_ecd_count;                          // 编码器增量计数
     fp32 add_angle;                                // 累计角度（度）
     
-    int32_t trigger_motor_speed_set;               // 目标转速（备用）
-    int32_t trigger_motor_angle_set;               // 目标角度（度）
+    fp32 trigger_motor_speed_set;               // 目标转速（备用）
+    fp32 trigger_motor_angle_set;               // 目标角度（度）
 } trigger_motor_t;
 
 /**

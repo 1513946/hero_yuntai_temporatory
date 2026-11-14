@@ -1,5 +1,7 @@
 #include "shoot_task.h"
 #include "stdlib.h"
+#include "user_lib.h"
+
 
 // 射击系统LQR控制器参数
 fp32 shoot_lqr[5]= {0.0f,1500.0f,0.0f,1000.0f,0.0f};
@@ -22,6 +24,7 @@ hero_shoot_t hero_shoot;
 gimbal_control_t mini_gimbal;
 
 int cnt_shoot = 0;
+float tem_shoot_current=0.0f;
 
 /**
   * @brief 射击系统任务
@@ -46,9 +49,8 @@ void Shoot_Task(void const * argument)
          
         // 注释掉的实际CAN通信代码
        CAN_cmd_shoot(hero_shoot.shoot_motor_1.give_current,hero_shoot.shoot_motor_2.give_current,hero_shoot.shoot_motor_3.give_current);
-       
-       hero_shoot.trigger_motor.give_current=LimitMax(hero_shoot.trigger_motor.give_current,2000);
-		
+       //tem_shoot_current = hero_shoot.trigger_motor.give_current=1000.0f;
+       abs_limit(&hero_shoot.trigger_motor.give_current, 10000.0f);
 		CAN_cmd_trigger(hero_shoot.trigger_motor.give_current, mini_gimbal.yaw_gimbal_motor.gimbal_motor_measure->ecd);
 
         
@@ -227,7 +229,7 @@ static void Shoot_Control_Set(hero_shoot_t *shoot_control_set)
         shoot_power_set(shoot_control_set);         // 热量控制
         shoot_speed_set(shoot_control_set);         // 速度控制
         shoot_bullet_control(shoot_control_set);    // 射击频率控制
-        //trigger_motor_turn_back(shoot_control_set); // 堵转检测控制  临时关闭，调试
+        trigger_motor_turn_back(shoot_control_set); // 堵转检测控制  临时关闭，调试
         
         // LQR控制器计算拨弹电机电流
         fp32 feed_back_triiger[3] = {
@@ -327,11 +329,11 @@ static void shoot_power_set(hero_shoot_t *shoot_speed_set)
     }
     else
     {
-            shoot_speed_set->trigger_motor.shoot_ban_hz = 100;
+            shoot_speed_set->trigger_motor.shoot_ban_hz = 300;
     }
 }
 
-  float need_angle = 5.0f;
+  float need_angle = 40.3f;
 /**
   * @brief 射击频率控制
   * @param shooot_bullet_control: 射击系统结构体指针
@@ -374,30 +376,32 @@ static void shoot_bullet_control(hero_shoot_t *shooot_bullet_control)
         // 控制拨弹盘旋转一个弹仓位置（40度）
        { 
       
-        if(__fabs(shooot_bullet_control->trigger_motor.trigger_motor_angle_set - 
-                 shooot_bullet_control->trigger_motor.add_angle) < need_angle)
-            {
-                shooot_bullet_control->trigger_motor.trigger_motor_angle_set -= need_angle;
-            }
-            else
-            {
-                shooot_bullet_control->trigger_motor.trigger_motor_angle_set = 
-                    shooot_bullet_control->trigger_motor.add_angle - need_angle;
-            }
+        shooot_bullet_control->trigger_motor.trigger_motor_angle_set -= need_angle;
+        // if(__fabs(shooot_bullet_control->trigger_motor.trigger_motor_angle_set - 
+        //          shooot_bullet_control->trigger_motor.add_angle) < need_angle)
+        //     {
+        //         shooot_bullet_control->trigger_motor.trigger_motor_angle_set -= need_angle;
+        //     }
+        //     else
+        //     {
+        //         shooot_bullet_control->trigger_motor.trigger_motor_angle_set = 
+        //             shooot_bullet_control->trigger_motor.add_angle - need_angle;
+        //     }
 		}
 		else if (switch_is_down(shooot_bullet_control->shoot_dt7_remote_control->rc.s[LEFT]))
 		{
 					
-            if(__fabs(shooot_bullet_control->trigger_motor.trigger_motor_angle_set - 
-                shooot_bullet_control->trigger_motor.add_angle) > need_angle)
-            {
-                shooot_bullet_control->trigger_motor.trigger_motor_angle_set += need_angle;
-            }
-            else
-            {
-                shooot_bullet_control->trigger_motor.trigger_motor_angle_set = 
-                    shooot_bullet_control->trigger_motor.add_angle + need_angle;
-            }
+            shooot_bullet_control->trigger_motor.trigger_motor_angle_set += need_angle;
+            // if(__fabs(shooot_bullet_control->trigger_motor.trigger_motor_angle_set - 
+            //     shooot_bullet_control->trigger_motor.add_angle) > need_angle)
+            // {
+            //     shooot_bullet_control->trigger_motor.trigger_motor_angle_set += need_angle;
+            // }
+            // else
+            // {
+            //     shooot_bullet_control->trigger_motor.trigger_motor_angle_set = 
+            //         shooot_bullet_control->trigger_motor.add_angle + need_angle;
+            // }
 					
 		}
 				
@@ -409,6 +413,7 @@ static void shoot_bullet_control(hero_shoot_t *shooot_bullet_control)
 
 // 调试用计数器
 int num = 0;
+float block_need_angle=30;
 
 /**
   * @brief 拨弹电机堵转控制
@@ -426,15 +431,16 @@ static void trigger_motor_turn_back(hero_shoot_t *shoot_block)
     else if(shoot_block->trigger_motor.tigger_bolck.reverse_time <= BLOCK_REVERSE_TIME)
     {
         if(shoot_block->trigger_motor.tigger_bolck.reverse_time == 1)
-        {  if(switch_is_up(shoot_block->shoot_dt7_remote_control->rc.s[LEFT]))
+        {  
+            if(switch_is_up(shoot_block->shoot_dt7_remote_control->rc.s[LEFT]))
             // 设置反转角度
            { shoot_block->trigger_motor.trigger_motor_angle_set = 
-                shoot_block->trigger_motor.add_angle + 45;}
+                shoot_block->trigger_motor.add_angle + block_need_angle;}
 					 else
 					 {
 						 
 						 shoot_block->trigger_motor.trigger_motor_angle_set = 
-                shoot_block->trigger_motor.add_angle -45;
+                shoot_block->trigger_motor.add_angle -block_need_angle;
 					 }
         }
     }

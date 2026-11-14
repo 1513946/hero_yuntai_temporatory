@@ -173,7 +173,7 @@
         <Ww>
           <count>4</count>
           <WinNumber>1</WinNumber>
-          <ItemText>motor_gimbal[4]</ItemText>
+          <ItemText>motor_gimbal[4],0x0A</ItemText>
         </Ww>
         <Ww>
           <count>5</count>
@@ -183,29 +183,41 @@
         <Ww>
           <count>6</count>
           <WinNumber>1</WinNumber>
-          <ItemText>cnt2,0x0A</ItemText>
+          <ItemText>hero_shoot</ItemText>
         </Ww>
         <Ww>
           <count>7</count>
           <WinNumber>1</WinNumber>
-          <ItemText>id2,0x10</ItemText>
+          <ItemText>motor_gimbal,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>8</count>
           <WinNumber>1</WinNumber>
-          <ItemText>cnt_shoot,0x0A</ItemText>
+          <ItemText>tem_shoot_current</ItemText>
         </Ww>
         <Ww>
           <count>9</count>
           <WinNumber>1</WinNumber>
-          <ItemText>hero_shoot</ItemText>
+          <ItemText>hero_shoot.trigger_motor.give_current</ItemText>
         </Ww>
         <Ww>
           <count>10</count>
           <WinNumber>1</WinNumber>
-          <ItemText>motor_gimbal,0x0A</ItemText>
+          <ItemText>cnt_shoot,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>11</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>gimbal_send_chassis_data</ItemText>
         </Ww>
       </WatchWindow1>
+      <WatchWindow2>
+        <Ww>
+          <count>0</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>0.0f</ItemText>
+        </Ww>
+      </WatchWindow2>
       <Tracepoint>
         <THDelay>0</THDelay>
       </Tracepoint>

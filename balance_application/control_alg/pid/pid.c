@@ -30,6 +30,7 @@ void pid_init(pid_type_def *user_pid,uint8_t mode ,const fp32 PID[3],fp32 max_ou
     user_pid->dbuf[0]=user_pid->dbuf[1]=user_pid->dbuf[2]=0.0f;
     user_pid->error[0]=user_pid->error[0]=user_pid->error[0]=0.0f;
     user_pid->dout=user_pid->iout=user_pid->pout=user_pid->out=0.0f;
+    
     }
 
 }
