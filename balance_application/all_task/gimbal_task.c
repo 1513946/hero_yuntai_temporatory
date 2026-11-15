@@ -6,6 +6,7 @@
  */
 
 #include "gimbal_task.h"
+#include "dt7_control.h"
 #include "shoot_task.h"
 #include "string.h"
 
@@ -24,7 +25,7 @@
 
 // 静态函数声明
 static void Gimbal_Init(gimbal_control_t *hero_gimbal_init);          // 云台初始化
-static void Gimbal_Set_Mode(gimbal_control_t *hero_gimbal_set_mode);  // 遥控器设置模式
+static void Gimbal_Set_Mode(gimbal_control_t *gimbal, dt7_gimbal_mode_t remote_mode);
 static void Gimbal_Mode_Change_Feedback_Change(gimbal_control_t *hero_gimbal_mode_change_feedback_change);  // 模式切换反馈
 static void Gimbal_Feedback_Updata(gimbal_control_t *hero_gimbal_feedback_updata);    // 反馈更新
 static void Gimbal_Mode_Set_Control(gimbal_control_t *hero_gimbal_mode_set_control);  // 模式切换控制
@@ -57,8 +58,11 @@ void Gimbal_Task(void const * argument)
     
     while(1)
     {
-        // 云台控制主循环
-        Gimbal_Set_Mode(&mini_gimbal);  // 设置云台控制模式
+        dt7_control_snapshot_t remote;
+        // 本轮复用快照里的云台模式和摇杆输入。
+        dt7_read_control_snapshot(&remote);
+        mini_gimbal.remote_input = remote.input;
+        Gimbal_Set_Mode(&mini_gimbal, remote.gimbal_mode);
         Gimbal_Mode_Change_Feedback_Change(&mini_gimbal);  // 模式切换反馈处理
         Gimbal_Feedback_Updata(&mini_gimbal);  // 更新反馈数据
         Gimbal_Mode_Set_Control(&mini_gimbal);  // 根据模式设置控制量
@@ -87,19 +91,12 @@ static void Gimbal_Init(gimbal_control_t *hero_gimbal_init)
 	hero_gimbal_init->gimbal_INS_angle_point = get_INS_angle_point();
 	hero_gimbal_init->gimbal_INS_gyro_point = get_gyro_data_point();
     
-    // 获取遥控器数据指针
-	hero_gimbal_init->gimbal_dt7_remote_control = get_dt7_remote_control_point();
-    
     // 初始化云台模式
 	hero_gimbal_init->gimbal_mode = GIMBAL_ZERO_FORCE;  // 默认无力模式
     hero_gimbal_init->yaw_gimbal_motor.gimbal_motor_mode = MOTOR_ZERO_FORCE;
     hero_gimbal_init->yaw_gimbal_motor.gimbal_motor_mode_last = MOTOR_ZERO_FORCE;
     hero_gimbal_init->pitch_gimbal_motor.gimbal_motor_mode = MOTOR_ZERO_FORCE;
     hero_gimbal_init->pitch_gimbal_motor.gimbal_motor_mode_last = MOTOR_ZERO_FORCE;
-    
-    // 初始化云台方向状态
-	hero_gimbal_init->gimbal_angle_change.gimbal_change = GIMABL_NOMAL_FORWARD;  // 默认前向
-	hero_gimbal_init->gimbal_angle_change.gimbal_change_last = GIMABL_NOMAL_FORWARD;
     
     // 初始化Yaw轴零位
 	hero_gimbal_init->yaw_gimbal_motor.relative_ecd_aero = YAW_ZERO_ANGLE_SET;
@@ -157,123 +154,44 @@ static void Gimbal_Init(gimbal_control_t *hero_gimbal_init)
 	hero_gimbal_init->pitch_gimbal_motor.absolute_angle_set = hero_gimbal_init->pitch_gimbal_motor.relative_angle_set = 0;
 	hero_gimbal_init->yaw_gimbal_motor.absolute_angle_set = hero_gimbal_init->yaw_gimbal_motor.relative_angle_set = 0;
     
-    // 初始化云台方向变化相关参数
-	hero_gimbal_init->gimbal_angle_change.gimbal_change_flag = 0;
-	hero_gimbal_init->gimbal_angle_change.gimbal_change_time = 0;
-	hero_gimbal_init->gimbal_angle_change.gimbal_change_chassis_time = 0;
-	hero_gimbal_init->gimbal_angle_change.gimbal_chnamge_chassis_flag = 0;
-    
     // 更新反馈数据
     Gimbal_Feedback_Updata(hero_gimbal_init);
 }
 
 /**
  * @brief 设置云台控制模式
- * @param hero_gimbal_set_mode 云台控制结构体指针
+ * @param gimbal 云台控制结构体指针
+ * @param remote_mode 遥控器选定的云台模式
  * @note 根据遥控器开关状态设置云台的控制模式
  */
-static void Gimbal_Set_Mode(gimbal_control_t *hero_gimbal_set_mode)
+static void Gimbal_Set_Mode(gimbal_control_t *gimbal, dt7_gimbal_mode_t remote_mode)
 {
-    if(hero_gimbal_set_mode == NULL)
+    gimbal_motor_mode_e motor_mode = MOTOR_GYRO;
+
+    gimbal->gimbal_mode_last = gimbal->gimbal_mode;
+    // DBUS 不可用时进入无力模式，随后两轴控制电流归零。
+    if (remote_mode == DT7_GIMBAL_OFF)
     {
-        return;
+        gimbal->gimbal_mode = GIMBAL_ZERO_FORCE;
+        motor_mode = MOTOR_ZERO_FORCE;
     }
-    
-    // 右拨杆向上：比赛模式
-	if(switch_is_up(hero_gimbal_set_mode->gimbal_dt7_remote_control->rc.s[RIGHT]))
-	{
-		hero_gimbal_set_mode->gimbal_mode = GIMBAL_GYRO;  // 默认陀螺仪模式
-		
-        // 鼠标右键按下：自动瞄准模式
-		if(hero_gimbal_set_mode->gimbal_dt7_remote_control->mouse.press_r == 1)
-		{
-			hero_gimbal_set_mode->gimbal_mode = GIMBAL_AUTO;
-		}
-		else  // 开启自瞄的时候不允许掉头
-		{
-            // 保存上一次的云台方向
-			hero_gimbal_set_mode->gimbal_angle_change.gimbal_change_last = hero_gimbal_set_mode->gimbal_angle_change.gimbal_change;
-            
-            // 处理云台掉头控制逻辑
-            // 条件：通道4值>=300 或 按下E键 且 掉头标志为0 且 掉头等待时间满足
-			if((hero_gimbal_set_mode->gimbal_dt7_remote_control->rc.ch[4] >= 300 || 
-                hero_gimbal_set_mode->gimbal_dt7_remote_control->key.v & KEY_PRESSED_OFFSET_E) &&
-                hero_gimbal_set_mode->gimbal_angle_change.gimbal_change_flag == 0 &&
-                hero_gimbal_set_mode->gimbal_angle_change.gimbal_change_time >= YAW_CHANGE_WAIT_TIME/2)
-		    {
-                // 设置新的零位角度，切换为前向
-				hero_gimbal_set_mode->yaw_gimbal_motor.relative_ecd_aero = YAW_CHANGE_ANGLE_SET;
-				hero_gimbal_set_mode->gimbal_angle_change.gimbal_change = GIMABL_CHANGE_FORWARD;
-				hero_gimbal_set_mode->gimbal_angle_change.gimbal_change_flag = 1;
-				hero_gimbal_set_mode->gimbal_angle_change.gimbal_change_time = 0;
-		    }
-            // 条件：通道4值>=300 或 按下E键 且 掉头标志为1 且 掉头等待时间满足
-			else if((hero_gimbal_set_mode->gimbal_dt7_remote_control->rc.ch[4] >= 300 || 
-                     hero_gimbal_set_mode->gimbal_dt7_remote_control->key.v & KEY_PRESSED_OFFSET_E) &&
-                    hero_gimbal_set_mode->gimbal_angle_change.gimbal_change_flag == 1 &&
-                    hero_gimbal_set_mode->gimbal_angle_change.gimbal_change_time >= YAW_CHANGE_WAIT_TIME/2)
-			{
-                // 恢复原始零位角度，切换为正常前向
-				hero_gimbal_set_mode->yaw_gimbal_motor.relative_ecd_aero = YAW_ZERO_ANGLE_SET;
-				hero_gimbal_set_mode->gimbal_angle_change.gimbal_change = GIMABL_NOMAL_FORWARD;
-				hero_gimbal_set_mode->gimbal_angle_change.gimbal_change_flag = 0;
-				hero_gimbal_set_mode->gimbal_angle_change.gimbal_change_time = 0;
-			}
-            
-            // 更新掉头时间计数器，防止溢出
-			if(hero_gimbal_set_mode->gimbal_angle_change.gimbal_change_time <= YAW_CHANGE_WAIT_TIME)
-			{
-				hero_gimbal_set_mode->gimbal_angle_change.gimbal_change_time++;
-			}
-			else
-			{
-				hero_gimbal_set_mode->gimbal_angle_change.gimbal_change_time = YAW_CHANGE_WAIT_TIME;
-			}
-		}
-	}
-	else  // 调试模式
-	{
-        // 根据右拨杆位置设置模式
-		if(switch_is_down(hero_gimbal_set_mode->gimbal_dt7_remote_control->rc.s[RIGHT]))
-		{
-			hero_gimbal_set_mode->gimbal_mode = GIMBAL_GYRO;
-		}
-		else if(switch_is_mid(hero_gimbal_set_mode->gimbal_dt7_remote_control->rc.s[RIGHT]))
-		{
-			hero_gimbal_set_mode->gimbal_mode = GIMBAL_GYRO;
-		}
-        
-        // 调试模式下的自瞄控制
-		if(hero_gimbal_set_mode->gimbal_mode == GIMBAL_GYRO)
-		{
-			if(switch_is_down(hero_gimbal_set_mode->gimbal_dt7_remote_control->rc.s[LEFT]) || 
-               switch_is_mid(hero_gimbal_set_mode->gimbal_dt7_remote_control->rc.s[LEFT]))
-			{
-				hero_gimbal_set_mode->gimbal_mode = GIMBAL_GYRO;
-			}
-			else
-			{
-				hero_gimbal_set_mode->gimbal_mode = GIMBAL_AUTO;
-			}
-		}
-	}
-    
-    // 根据云台模式设置电机模式
-    if(hero_gimbal_set_mode->gimbal_mode == GIMBAL_ZERO_FORCE)
+    else if (remote_mode == DT7_GIMBAL_AUTO)
     {
-        hero_gimbal_set_mode->yaw_gimbal_motor.gimbal_motor_mode = MOTOR_ZERO_FORCE;
-        hero_gimbal_set_mode->pitch_gimbal_motor.gimbal_motor_mode = MOTOR_ZERO_FORCE;
+        gimbal->gimbal_mode = GIMBAL_AUTO;
     }
-    else if(hero_gimbal_set_mode->gimbal_mode == GIMBAL_ENCONDE)
+    else
     {
-        hero_gimbal_set_mode->yaw_gimbal_motor.gimbal_motor_mode = MOTOR_ENCONDE;
-        hero_gimbal_set_mode->pitch_gimbal_motor.gimbal_motor_mode = MOTOR_ENCONDE;
+        gimbal->gimbal_mode = GIMBAL_GYRO;
+        if (gimbal->gimbal_mode_last == GIMBAL_AUTO)
+        {
+            // 手动接管时从当前姿态开始，避免继续追上一轮自瞄角度。
+            gimbal->yaw_gimbal_motor.absolute_angle_set = gimbal->yaw_gimbal_motor.absolute_angle;
+            gimbal->pitch_gimbal_motor.absolute_angle_set = gimbal->pitch_gimbal_motor.absolute_angle;
+        }
     }
-    else if(hero_gimbal_set_mode->gimbal_mode == GIMBAL_GYRO || hero_gimbal_set_mode->gimbal_mode == GIMBAL_AUTO)
-    {
-        hero_gimbal_set_mode->yaw_gimbal_motor.gimbal_motor_mode = MOTOR_GYRO;
-        hero_gimbal_set_mode->pitch_gimbal_motor.gimbal_motor_mode = MOTOR_GYRO;
-    }
+
+    gimbal->yaw_gimbal_motor.gimbal_motor_mode = motor_mode;
+    gimbal->pitch_gimbal_motor.gimbal_motor_mode = motor_mode;
 }
 
 /**
@@ -428,24 +346,6 @@ static void Gimbal_Mode_Set_Control(gimbal_control_t *hero_gimbal_mode_set_contr
         // 更新绝对角度设定值
         hero_gimbal_mode_set_control->pitch_gimbal_motor.absolute_angle_set += add_pitch_angle;
         hero_gimbal_mode_set_control->yaw_gimbal_motor.absolute_angle_set += add_yaw_angle;
-        
-        // 处理云台掉头逻辑
-		if(hero_gimbal_mode_set_control->gimbal_angle_change.gimbal_change != 
-           hero_gimbal_mode_set_control->gimbal_angle_change.gimbal_change_last)
-		{
-			if(hero_gimbal_mode_set_control->gimbal_angle_change.gimbal_change == GIMABL_NOMAL_FORWARD)
-			{
-                // 从掉头状态恢复：加π
-				hero_gimbal_mode_set_control->yaw_gimbal_motor.absolute_angle_set = 
-                    hero_gimbal_mode_set_control->yaw_gimbal_motor.absolute_angle_set + PI;
-			}
-			else if(hero_gimbal_mode_set_control->gimbal_angle_change.gimbal_change == GIMABL_CHANGE_FORWARD)
-			{
-                // 进入掉头状态：减π
-				hero_gimbal_mode_set_control->yaw_gimbal_motor.absolute_angle_set = 
-                    hero_gimbal_mode_set_control->yaw_gimbal_motor.absolute_angle_set - PI;
-			}
-		}
         
         // YAW轴角度限幅 [-π, π]
         if(hero_gimbal_mode_set_control->yaw_gimbal_motor.absolute_angle_set > PI)
@@ -696,12 +596,12 @@ static void Gimbal_Relative_Angle_Control(fp32 *yaw, fp32 *pitch, gimbal_control
     static int16_t yaw_channel = 0, pitch_channel = 0;
     
     // 遥控器通道死区处理
-    Remote_Deadband_Limit(gimbal_control_set->gimbal_dt7_remote_control->rc.ch[YAW_CHANNEL], yaw_channel, RC_DEADBAND);
-    Remote_Deadband_Limit(gimbal_control_set->gimbal_dt7_remote_control->rc.ch[PITCH_CHANNEL], pitch_channel, RC_DEADBAND);
+    Remote_Deadband_Limit(gimbal_control_set->remote_input.rc.ch[YAW_CHANNEL], yaw_channel, RC_DEADBAND);
+    Remote_Deadband_Limit(gimbal_control_set->remote_input.rc.ch[PITCH_CHANNEL], pitch_channel, RC_DEADBAND);
     
     // 计算角度增量：遥控器通道 + 鼠标输入
-    *yaw = yaw_channel * YAW_RC_SEN - gimbal_control_set->gimbal_dt7_remote_control->mouse.x * YAW_MOUSE_SEN;
-    *pitch = -pitch_channel * PITCH_RC_SEN + gimbal_control_set->gimbal_dt7_remote_control->mouse.y * PITCH_MOUSE_SEN;
+    *yaw = yaw_channel * YAW_RC_SEN - gimbal_control_set->remote_input.mouse.x * YAW_MOUSE_SEN;
+    *pitch = -pitch_channel * PITCH_RC_SEN + gimbal_control_set->remote_input.mouse.y * PITCH_MOUSE_SEN;
 }
 
 /**
@@ -721,12 +621,12 @@ static void Gimbal_Absolute_Angle_Control(fp32 *yaw, fp32 *pitch, gimbal_control
     static int16_t yaw_channel = 0, pitch_channel = 0;
     
     // 遥控器通道死区处理
-    Remote_Deadband_Limit(gimbal_control_set->gimbal_dt7_remote_control->rc.ch[YAW_CHANNEL], yaw_channel, RC_DEADBAND);
-    Remote_Deadband_Limit(gimbal_control_set->gimbal_dt7_remote_control->rc.ch[PITCH_CHANNEL], pitch_channel, RC_DEADBAND);
+    Remote_Deadband_Limit(gimbal_control_set->remote_input.rc.ch[YAW_CHANNEL], yaw_channel, RC_DEADBAND);
+    Remote_Deadband_Limit(gimbal_control_set->remote_input.rc.ch[PITCH_CHANNEL], pitch_channel, RC_DEADBAND);
     
     // 计算角度增量：遥控器通道 + 鼠标输入
-    *yaw = yaw_channel * YAW_RC_SEN - gimbal_control_set->gimbal_dt7_remote_control->mouse.x * YAW_MOUSE_SEN;
-    *pitch = -pitch_channel * -PITCH_RC_SEN + gimbal_control_set->gimbal_dt7_remote_control->mouse.y * PITCH_MOUSE_SEN;
+    *yaw = yaw_channel * YAW_RC_SEN - gimbal_control_set->remote_input.mouse.x * YAW_MOUSE_SEN;
+    *pitch = -pitch_channel * -PITCH_RC_SEN + gimbal_control_set->remote_input.mouse.y * PITCH_MOUSE_SEN;
 }
 
 /**

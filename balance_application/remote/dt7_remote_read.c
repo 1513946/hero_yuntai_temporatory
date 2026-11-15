@@ -1,141 +1,131 @@
 #include "dt7_remote_read.h"
-#include "main.h"
+#include "double_dma_init.h"
+#include "usart.h"
 
-//临时变量，测试
-volatile uint16_t wheel_raw_dbg = 0;
-/*使用uart3——dma*/
+// 两块 DMA 缓冲各开 36 字节。初始化和每次重装都用这个容量。
+#define DBUS_DMA_BUFFER_LENGTH (2U * RC_FRAME_LENGTH)
+#define DBUS_RECEIVE_ERROR_FLAGS (UART_FLAG_PE | UART_FLAG_FE | UART_FLAG_NE | UART_FLAG_ORE)
 
-extern UART_HandleTypeDef huart3;
-extern DMA_HandleTypeDef hdma_usart3_rx;
+volatile RC_ctrl_t dt7;
+volatile uint16_t wheel_raw_dbg;
+static volatile uint32_t received_at_ms;
+static volatile uint8_t frame_valid;
+static volatile uint8_t thumbwheel_valid;
 
-RC_ctrl_t dt7;
+static uint8_t dbus_receive_buffers[2][DBUS_DMA_BUFFER_LENGTH];
 
-static void solve_dt7_data(volatile const uint8_t *sbus_buf, RC_ctrl_t *dt7); //进行解码
-
-static uint8_t sbus_rx_buffer[2][SBUS_RX_BUF_NUM];  //缓冲数组
-
-void dt7_remote_read_init(void)
+static uint16_t read_little_endian_uint16(const volatile uint8_t *data)
 {
-    Double_dma_init(&huart3,&hdma_usart3_rx,sbus_rx_buffer[0],sbus_rx_buffer[1],RC_FRAME_LENGTH);  //双缓冲加载
+    return (uint16_t)((uint16_t)data[0] | ((uint16_t)data[1] << 8U));
 }
 
-
-const RC_ctrl_t *get_dt7_remote_control_point(void)
+static void decode_frame(const volatile uint8_t *data)
 {
-    return &dt7;
-}
+    RC_ctrl_t input = {0};
+    uint16_t axes[4];
+    uint8_t index;
 
-//串口中断
-void USART3_IRQHandler(void)
-{
-    if(huart3.Instance->SR & UART_FLAG_RXNE)//接收到数据
-    {
-        __HAL_UART_CLEAR_PEFLAG(&huart3);
-    }
-    else if(USART3->SR & UART_FLAG_IDLE)
-    {
-        static uint16_t this_time_rx_len = 0;
+    // data[0..5] 打包了四路 11 位摇杆量和两路 2 位拨杆值。
+    axes[0] = read_little_endian_uint16(&data[0]) & 0x07FFU;
+    axes[1] = (read_little_endian_uint16(&data[1]) >> 3U) & 0x07FFU;
+    axes[2] = ((data[2] >> 6U) | (data[3] << 2U) | (data[4] << 10U)) & 0x07FFU;
+    axes[3] = (read_little_endian_uint16(&data[4]) >> 1U) & 0x07FFU;
+    input.rc.s[DT7_SWITCH_RIGHT] = (data[5] >> 4U) & 0x03U;
+    input.rc.s[DT7_SWITCH_LEFT] = (data[5] >> 6U) & 0x03U;
 
-        __HAL_UART_CLEAR_PEFLAG(&huart3);
-
-        if ((hdma_usart3_rx.Instance->CR & DMA_SxCR_CT) == RESET)
-        {
-            /* Current memory buffer used is Memory 0 */
-    
-            //disable DMA
-            //失效DMA
-            __HAL_DMA_DISABLE(&hdma_usart3_rx);
-
-            //get receive data length, length = set_data_length - remain_length
-            //获取接收数据长度,长度 = 设定长度 - 剩余长度
-            this_time_rx_len = SBUS_RX_BUF_NUM - hdma_usart3_rx.Instance->NDTR;
-
-            //reset set_data_lenght
-            //重新设定数据长度
-            hdma_usart3_rx.Instance->NDTR = SBUS_RX_BUF_NUM;
-
-            //set memory buffer 1
-            //设定缓冲区1
-            hdma_usart3_rx.Instance->CR |= DMA_SxCR_CT;
-            
-            //enable DMA
-            //使能DMA
-            __HAL_DMA_ENABLE(&hdma_usart3_rx);
-
-            if(this_time_rx_len == RC_FRAME_LENGTH)  //接收到一帧数据后解码
-            {
-                solve_dt7_data(sbus_rx_buffer[0], &dt7);
-            }
-        }
-        else
-        {
-            /* Current memory buffer used is Memory 1 */
-            //disable DMA
-            //失效DMA
-            __HAL_DMA_DISABLE(&hdma_usart3_rx);
-
-            //get receive data length, length = set_data_length - remain_length
-            //获取接收数据长度,长度 = 设定长度 - 剩余长度
-            this_time_rx_len = SBUS_RX_BUF_NUM - hdma_usart3_rx.Instance->NDTR; //不定长数据接收
-
-            //reset set_data_lenght
-            //重新设定数据长度
-            hdma_usart3_rx.Instance->NDTR = SBUS_RX_BUF_NUM;
-
-            //set memory buffer 0
-            //设定缓冲区0
-            DMA1_Stream1->CR &= ~(DMA_SxCR_CT);
-            
-            //enable DMA
-            //使能DMA
-            __HAL_DMA_ENABLE(&hdma_usart3_rx);
-
-            if(this_time_rx_len == RC_FRAME_LENGTH)
-            {
-                //处理遥控器数据
-                solve_dt7_data(sbus_rx_buffer[1], &dt7);
-            }
-			
-        }
-    }
-}
-
-static void  solve_dt7_data(volatile const uint8_t *sbus, RC_ctrl_t *dt7)
-{
-    //114  第0
-    if(sbus==NULL||dt7==NULL)
+    // 旧工程使用末两字节作为拨轮，单独校验，避免保留字节被当作单侧选择。
+    wheel_raw_dbg = read_little_endian_uint16(&data[16]);
+    frame_valid = 0U;
+    if (input.rc.s[DT7_SWITCH_LEFT] == 0U || input.rc.s[DT7_SWITCH_RIGHT] == 0U)
     {
         return;
     }
+    for (index = 0U; index < 4U; ++index)
+    {
+        if (axes[index] < RC_CH_VALUE_MIN - DT7_CHANNEL_MARGIN ||
+            axes[index] > RC_CH_VALUE_MAX + DT7_CHANNEL_MARGIN)
+        {
+            return;
+        }
+        input.rc.ch[index] = (int16_t)axes[index] - RC_CH_VALUE_OFFSET;
+    }
+
+    thumbwheel_valid = (wheel_raw_dbg >= RC_CH_VALUE_MIN - DT7_CHANNEL_MARGIN &&
+                   wheel_raw_dbg <= RC_CH_VALUE_MAX + DT7_CHANNEL_MARGIN);
+    if (thumbwheel_valid)
+    {
+        input.rc.ch[DT7_CHANNEL_THUMBWHEEL] = (int16_t)wheel_raw_dbg - RC_CH_VALUE_OFFSET;
+    }
+    input.mouse.x = (int16_t)read_little_endian_uint16(&data[6]);
+    input.mouse.y = (int16_t)read_little_endian_uint16(&data[8]);
+    input.mouse.z = (int16_t)read_little_endian_uint16(&data[10]);
+    input.mouse.press_l_last = dt7.mouse.press_l;
+    input.mouse.press_r_last = dt7.mouse.press_r;
+    input.mouse.press_l = data[12];
+    input.mouse.press_r = data[13];
+    input.key.v = read_little_endian_uint16(&data[14]);
+
+    // 完成校验后一起发布输入和接收时间，超时从这帧开始计时。
+    dt7 = input;
+    received_at_ms = HAL_GetTick();
+    frame_valid = 1U;
+}
+
+void dt7_remote_read_init(void)
+{
+    const uint32_t saved_interrupt_mask = __get_PRIMASK();
+    __disable_irq();
+    __HAL_UART_CLEAR_IDLEFLAG(&huart3);
+    Double_dma_init(&huart3, huart3.hdmarx,
+                    dbus_receive_buffers[0], dbus_receive_buffers[1], DBUS_DMA_BUFFER_LENGTH);
+    __set_PRIMASK(saved_interrupt_mask);
+}
+
+void dt7_read_received_frame(dt7_received_frame_t *received_frame)
+{
+    // 复制时暂时屏蔽中断，让遥控量、时间戳和有效标志来自同一帧。
+    const uint32_t saved_interrupt_mask = __get_PRIMASK();
+    __disable_irq();
+    received_frame->input = dt7;
+    received_frame->received_at_ms = received_at_ms;
+    received_frame->valid = frame_valid;
+    received_frame->thumbwheel_valid = thumbwheel_valid;
+    __set_PRIMASK(saved_interrupt_mask);
+}
+
+void USART3_IRQHandler(void)
+{
+    const uint32_t status = huart3.Instance->SR;
+    DMA_HandleTypeDef *const receive_dma = huart3.hdmarx;
+    DMA_Stream_TypeDef *const dma = receive_dma->Instance;
+    uint32_t length;
+    uint8_t buffer;
+
+    if ((status & (UART_FLAG_IDLE | DBUS_RECEIVE_ERROR_FLAGS)) == 0U)
+    {
+        return;
+    }
+
+    // 读取 SR 后读取 DR 清除空闲及接收错误标志。
+    (void)huart3.Instance->DR;
+    __HAL_DMA_DISABLE(receive_dma);
+    while ((dma->CR & DMA_SxCR_EN) != 0U)
+    {
+    }
+    // NDTR 是剩余接收数，用缓冲容量减去它得到本次实际长度。
+    buffer = (dma->CR & DMA_SxCR_CT) != 0U;
+    length = DBUS_DMA_BUFFER_LENGTH - dma->NDTR;
+    dma->NDTR = DBUS_DMA_BUFFER_LENGTH;
+    // 先切到另一块缓冲继续接收，再解包刚结束的缓冲区。
+    dma->CR ^= DMA_SxCR_CT;
+    __HAL_DMA_ENABLE(receive_dma);
+
+    if ((status & DBUS_RECEIVE_ERROR_FLAGS) == 0U && length == RC_FRAME_LENGTH)
+    {
+        decode_frame(dbus_receive_buffers[buffer]);
+    }
     else
     {
-        dt7->rc.ch[0]=((sbus[0])|(sbus[1]<<8)) & 0x7ff;      //左边   ——>0
-        dt7->rc.ch[1]=((sbus[1]>>3)|(sbus[2]<<5)) &0x7ff;    
-
-        dt7->rc.ch[2]=((sbus[2]>>6)|(sbus[3]<<2)|(sbus[4]<<10)) &0x7ff;   //右边   ——>2
-        dt7->rc.ch[3]=((sbus[4]>>1)|(sbus[5]<<7)) &0x7ff;
-
-        dt7->rc.s[0]= ((sbus[5]>>4)) &0x0003;  //左边
-        dt7->rc.s[1]=((sbus[5]>>6))  &0x0003;  //右边
-
-        dt7->mouse.x=((sbus[6])|(sbus[7]<<8));
-        dt7->mouse.y=((sbus[8])|(sbus[9]<<8));
-        dt7->mouse.z=((sbus[10])|(sbus[11]<<8));
-        dt7->mouse.press_l_last=dt7->mouse.press_l;
-        dt7->mouse.press_r_last = dt7->mouse.press_r;
-        dt7->mouse.press_l=sbus[12];
-        dt7->mouse.press_r=sbus[13];
-        dt7->key.v = sbus[14] | (sbus[15] << 8);                    //键盘通道
-        dt7->rc.ch[4] = sbus[16] | (sbus[17] << 8); 
-        wheel_raw_dbg = (uint16_t)sbus[16]
-              | ((uint16_t)sbus[17] << 8);                //波轮
-        //dt7->rc.ch[4]= dt7->rc.ch[4]&0x07ff;
-
-        dt7->rc.ch[0] -= RC_CH_VALUE_OFFSET;
-        dt7->rc.ch[1] -= RC_CH_VALUE_OFFSET;
-        dt7->rc.ch[2] -= RC_CH_VALUE_OFFSET;
-        dt7->rc.ch[3] -= RC_CH_VALUE_OFFSET;
-        dt7->rc.ch[4] -= RC_CH_VALUE_OFFSET;
-
+        frame_valid = 0U;
     }
 }

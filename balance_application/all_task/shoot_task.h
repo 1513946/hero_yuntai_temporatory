@@ -69,7 +69,6 @@
 
 
 /*================================ 遥控器按键宏 =================================*/
-#define FIRE_ON                     KEY_PRESSED_OFFSET_R  // 启动/停止摩擦轮按键（R键）
 #define FIRE_ALL                    KEY_PRESSED_OFFSET_Q  // 连发模式按键（Q键）
 
 /*================================ 堵转检测参数 =================================*/
@@ -212,7 +211,7 @@ typedef struct
  */
 typedef struct
 {
-    const RC_ctrl_t *shoot_dt7_remote_control;  // 遥控器数据指针
+    RC_ctrl_t remote_input;                   // 本轮的遥控器快照
     const gimbal_control_t *gimbal;              // 云台控制数据指针
     
     shoot_motor_t shoot_motor_1;                 // 右摩擦轮电机

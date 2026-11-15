@@ -70,8 +70,6 @@
 
 // ============================ 云台零点设置 ============================
 #define YAW_ZERO_ANGLE_SET    6533             // YAW轴零点位置（9025电机，待设置）
-#define YAW_CHANGE_ANGLE_SET  0            // YAW轴掉头零点位置（9025电机，待设置）
-#define YAW_CHANGE_WAIT_TIME  1600             // 掉头等待时间（控制周期数）
 #define PITCH_ZERO_ANGLE_SET  1891             // PITCH轴零点位置
 
 // ============================ 遥控器参数 ============================
@@ -89,13 +87,6 @@
 
 // 遥控器死区
 #define RC_DEADBAND           10               // 遥控器通道死区值
-
-// 拨杆定义
-#define LEFT                  1                // 左拨杆
-#define RIGHT                 0                // 右拨杆
-
-// ============================ 按键定义 ============================
-#define CHANGE_GIMBAL_FORWARD KEY_PRESSED_OFFSET_E  // 一键掉头按键
 
 // ============================ 云台角度限制 ============================
 // PITCH轴相对角度限制（编码器角度）
@@ -263,16 +254,6 @@ typedef enum
 } gimbal_motor_mode_e;
 
 /**
- * @brief 云台跟随状态枚举
- * @note 定义云台的朝向状态
- */
-typedef enum
-{
-	GIMABL_NOMAL_FORWARD,   // 正常前向状态
-    GIMABL_CHANGE_FORWARD,  // 掉头前向状态
-} gimbal_follow_gimbal_state_e;
-
-/**
  * @brief 云台电机控制数据结构体
  * @note 包含云台单个电机的所有控制参数和状态
  */
@@ -323,20 +304,6 @@ typedef struct
 } gimbal_motor_t;
 
 /**
- * @brief 云台状态切换数据结构体
- * @note 用于管理云台的状态切换和掉头逻辑
- */
-typedef struct
-{
-	gimbal_follow_gimbal_state_e gimbal_change;       // 当前云台方向状态
-	gimbal_follow_gimbal_state_e gimbal_change_last;  // 上一次云台方向状态
-	uint8_t  gimbal_change_flag;                      // 云台方向切换标志
-	uint32_t gimbal_change_time;                      // 云台方向切换计时器
-	uint32_t gimbal_change_chassis_time;              // 云台与底盘切换计时器
-	uint8_t  gimbal_chnamge_chassis_flag;             // 云台与底盘切换标志
-} gimbal_change_t;
-
-/**
  * @brief 云台控制主结构体
  * @note 包含云台的所有控制参数、状态和控制器
  */
@@ -348,13 +315,12 @@ typedef struct
     // 传感器数据指针
 	const fp32 *gimbal_INS_angle_point;                // IMU角度数据指针
 	const fp32 *gimbal_INS_gyro_point;                 // IMU角速度数据指针
-	const RC_ctrl_t *gimbal_dt7_remote_control;        // 遥控器数据指针
+    RC_ctrl_t remote_input;                           // 本轮的遥控器快照
 	const autom_pc *hero_pc;                           // PC通信数据指针
     
     // 云台状态
 	gimbal_mode_e gimbal_mode;                         // 当前云台控制模式
 	gimbal_mode_e gimbal_mode_last;                    // 上一次云台控制模式
-	gimbal_change_t gimbal_angle_change;               // 云台角度变化状态
 } gimbal_control_t;
 
 // ============================ 函数声明 ============================

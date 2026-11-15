@@ -20,17 +20,21 @@
   */
 #ifndef DT7_REMOTE_READ_H
 #define DT7_REMOTE_READ_H
-#include "c_data_typedef.h"
-#include "double_dma_init.h"
+#include <stdint.h>
 
 /**********************遥控器用宏定义*************************/
-#define SBUS_RX_BUF_NUM 36u  //双缓冲
-
 #define RC_FRAME_LENGTH 18u  //DT7一帧数据长度
 
 #define RC_CH_VALUE_MIN         ((uint16_t)364)  
 #define RC_CH_VALUE_OFFSET      ((uint16_t)1024) //遥控器中值
 #define RC_CH_VALUE_MAX         ((uint16_t)1684)
+#define DT7_CHANNEL_MARGIN      40
+
+#define DT7_CHANNEL_LEFT_X      2U
+#define DT7_CHANNEL_LEFT_Y      3U
+#define DT7_CHANNEL_THUMBWHEEL  4U
+#define DT7_SWITCH_RIGHT        0U
+#define DT7_SWITCH_LEFT         1U
 
 /* ----------------------- RC Switch Definition----------------------------- */
 #define RC_SW_UP                ((uint16_t)1)
@@ -58,16 +62,16 @@
 #define KEY_PRESSED_OFFSET_B            ((uint16_t)1 << 15)
 /* ----------------------- Data Struct ------------------------------------- */
 
-typedef __packed struct
+typedef struct
 {
-    __packed struct
+    struct
     {
         int16_t ch[5];
         //右横 右纵 左横 左纵
-        char s[2];//拨杆
+        uint8_t s[2]; // 拨杆，右侧在前
     } rc; //遥控器
 
-    __packed struct
+    struct
     {
         int16_t x;
         int16_t y;
@@ -78,19 +82,24 @@ typedef __packed struct
         uint8_t press_r_last;
     } mouse; //鼠标
 
-    __packed struct
+    struct
     {
         uint16_t v;
     } key; //键盘
 
 } RC_ctrl_t;
-extern RC_ctrl_t dt7;
+typedef struct
+{
+    RC_ctrl_t input;
+    uint32_t received_at_ms;   // 最近一帧通过校验的接收时刻
+    uint8_t valid;          // 最新接收结果的整帧有效标志
+    uint8_t thumbwheel_valid; // 拨轮通道单独校验的结果
+} dt7_received_frame_t;
 
+extern volatile RC_ctrl_t dt7;
+extern volatile uint16_t wheel_raw_dbg;
 
-extern void dt7_remote_read_init(void);  //dt7遥控器初始化 开启dma双缓冲
-
-
-extern const RC_ctrl_t *get_dt7_remote_control_point(void);
-
+void dt7_remote_read_init(void);
+void dt7_read_received_frame(dt7_received_frame_t *received_frame);
 
 #endif

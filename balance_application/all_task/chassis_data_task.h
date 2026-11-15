@@ -30,32 +30,6 @@
                                                                                                 ||||||||||||||||                                                                                                                                                                   
  
 */
-#include "main.h"
-#include "gimbal_task.h"
-#include "can_user.h"
-#define X_rc_channel  3
-#define Y_rc_channel  2
+void Chassis_Data_Task(void const *argument);
 
-#define FORWARED        KEY_PRESSED_OFFSET_S
-#define BACK            KEY_PRESSED_OFFSET_W
-#define RGHTWARD        KEY_PRESSED_OFFSET_D 
-#define LEFTWARD        KEY_PRESSED_OFFSET_A 
-#define CAP_ON_KEY      KEY_PRESSED_OFFSET_SHIFT
-#define TOP_ON_KEY      KEY_PRESSED_OFFSET_C
-
-#define CHASSIS_DATA_DELAY 300
-gimbal_c_send_data_t gimbal_send_chassis_data=
-{
-		0,
-		0,
-		0,
-		0,
-		0,
-		0,
-		0,
-	    0,
-	    0,
-	    0,
-};
 #endif
-

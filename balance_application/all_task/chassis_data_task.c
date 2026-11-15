@@ -1,149 +1,38 @@
 #include "chassis_data_task.h"
-#include "../can/can_user.h"
+#include "can_user.h"
+#include "dt7_control.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
-#define Remote_Deadband_Limit(mag_input,msg_output,dead_control) \
-{                                                                \
-    if(mag_input>dead_control||mag_input<-dead_control)          \
-    {                                                            \
-        msg_output=mag_input;                                    \
-    }                                                            \
-    else                                                         \
-    {                                                            \
-        msg_output=0;                                            \
-    }                                                            \
-}  //Ò£¿ØÆ÷ËÀÇø¿ØÖÆ
+#define CHASSIS_DATA_DELAY 300U
+#define REMOTE_SWITCH_PERIOD_MS 10U
 
-static void mini_chassis_mode_set(gimbal_c_send_data_t *gimbal_send_data,gimbal_control_t *mini_gimbal);
-static void send_remote_to_chassis(gimbal_control_t *mini_gimbal);
-extern gimbal_control_t mini_gimbal;
-void Chassis_Data_Task(void const * argument)
+void Chassis_Data_Task(void const *argument)
 {
-	vTaskDelay(CHASSIS_DATA_DELAY);
-	while(1)
-	{
-		mini_chassis_mode_set(&gimbal_send_chassis_data,&mini_gimbal);
-		CAN_gimbal_send_chassis(&gimbal_send_chassis_data);
-		   const RC_ctrl_t *rc_data = get_dt7_remote_control_point();
-	
-		    if(rc_data != NULL)
+    const uint32_t start_ms = HAL_GetTick();
+    dt7_control_snapshot_t control;
+    uint32_t last_switch_send_ms = start_ms;
+
+    (void)argument;
+
+    for (;;)
+    {
+        const uint32_t now = HAL_GetTick();
+        // ä»»åŠ¡å¯åŠ¨åç«‹å³åˆ·æ–°é¥æ§å¿«ç…§ï¼ŒCAN å‘åŒ…ä»ç­‰å¾…åŸæ¥çš„ 300 msã€‚
+        dt7_update_control_snapshot();
+        if (now - start_ms >= CHASSIS_DATA_DELAY)
         {
-        	send_remote_to_chassis(&mini_gimbal);
+            dt7_read_control_snapshot(&control);
+            CAN_gimbal_send_chassis(&control.chassis);
+
+            if (now - last_switch_send_ms >= REMOTE_SWITCH_PERIOD_MS)
+            {
+                // æ—§ 0x401 å®šæ—¶è½¬å‘å·¦æ‹¨æ†ã€‚çˆ¬é˜¶æŒ‡ä»¤éš 0x307 å‘é€ã€‚
+                CAN_send_remote_to_chassis(control.input.rc.s[DT7_SWITCH_LEFT]);
+                last_switch_send_ms = now;
+            }
         }
-		vTaskDelay(1);
-	}
-	
-}
-static void send_remote_to_chassis(gimbal_control_t *mini_gimbal)
-{
-    static uint32_t last_send_time = 0;
-    uint32_t current_time = HAL_GetTick();
-    
-   
-    if (current_time - last_send_time < 10)
-    {
-        return;
+
+        vTaskDelay(1);
     }
-    
-    if (mini_gimbal->gimbal_dt7_remote_control != NULL)
-    {
-        
-        uint8_t left_switch = mini_gimbal->gimbal_dt7_remote_control->rc.s[1]; 
- 
-        
-       
-        CAN_send_remote_to_chassis(left_switch); 
-    }
-    
-    last_send_time = current_time;
-}
-
-static void mini_chassis_mode_set(gimbal_c_send_data_t *gimbal_send_data,gimbal_control_t *mini_gimbal)
-{
-	int16_t x_rc=0;
-	int16_t y_rc=0;
-	Remote_Deadband_Limit(mini_gimbal->gimbal_dt7_remote_control->rc.ch[X_rc_channel],x_rc,10);
-	Remote_Deadband_Limit(mini_gimbal->gimbal_dt7_remote_control->rc.ch[Y_rc_channel],y_rc,10);
-	
-	gimbal_send_data->follow_mode=mini_gimbal->gimbal_angle_change.gimbal_change;
-	gimbal_send_data->follow_mode_last=mini_gimbal->gimbal_angle_change.gimbal_change_last;
-	
-	if(switch_is_up(mini_gimbal->gimbal_dt7_remote_control->rc.s[RIGHT])) //½øÈë±ÈÈüÄ£Ê½
-	{
-		gimbal_send_data->key_control=3;
-		
-		if(mini_gimbal->gimbal_dt7_remote_control->key.v&FORWARED)    //Ç°
-		{
-			gimbal_send_data->x_key_data=1;
-		}
-		else if(mini_gimbal->gimbal_dt7_remote_control->key.v&BACK)  //ºó
-		{
-			gimbal_send_data->x_key_data=2;
-		}
-		else
-		{
-			gimbal_send_data->x_key_data=0;
-		}
-		if(mini_gimbal->gimbal_dt7_remote_control->key.v&RGHTWARD)     //ÓÒ
-		{
-			gimbal_send_data->y_key_data=1;
-		}
-		else if(mini_gimbal->gimbal_dt7_remote_control->key.v&LEFTWARD)//×ó
-		{
-			gimbal_send_data->y_key_data=2;
-		}
-		else
-		{
-			gimbal_send_data->y_key_data=0;
-		}
-
-		if(mini_gimbal->gimbal_dt7_remote_control->key.v&CAP_ON_KEY)
-		{
-			gimbal_send_data->cap_mode=1;
-		}
-		else
-		{
-			gimbal_send_data->cap_mode=0;
-		}
-
-		if(mini_gimbal->gimbal_dt7_remote_control->key.v&TOP_ON_KEY)
-		{
-			gimbal_send_data->top_mode=1;
-		}
-		else
-		{
-			gimbal_send_data->top_mode=0;
-		}
-	}
-	else //µ÷ÊÔ
-	{
-		gimbal_send_data->key_control=0;
-		gimbal_send_data->x_rc_data=x_rc;
-	    gimbal_send_data->y_rc_data=y_rc;
-		if(switch_is_mid(mini_gimbal->gimbal_dt7_remote_control->rc.s[RIGHT]))
-		{
-			gimbal_send_data->chassis_mode=3;
-			if(mini_gimbal->gimbal_dt7_remote_control->rc.ch[4]>300)
-			{
-				gimbal_send_data->cap_mode=1;
-			}
-			else
-			{
-				gimbal_send_data->cap_mode=0;
-			}
-			
-			if(mini_gimbal->gimbal_dt7_remote_control->rc.ch[4]<-300)
-			{
-				gimbal_send_data->top_mode=1;
-			}
-			else
-			{
-				gimbal_send_data->top_mode=0;
-			}
-		}
-		else if(switch_is_down(mini_gimbal->gimbal_dt7_remote_control->rc.s[RIGHT]))
-		{
-			gimbal_send_data->chassis_mode=2;
-		}
-	}
-	
 }

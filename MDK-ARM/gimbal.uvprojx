@@ -1232,6 +1232,16 @@
               <FilePath>..\balance_application\remote\dt7_remote_read.h</FilePath>
             </File>
             <File>
+              <FileName>dt7_control.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\balance_application\remote\dt7_control.c</FilePath>
+            </File>
+            <File>
+              <FileName>dt7_control.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\balance_application\remote\dt7_control.h</FilePath>
+            </File>
+            <File>
               <FileName>vofa.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\balance_application\vofa\vofa.c</FilePath>

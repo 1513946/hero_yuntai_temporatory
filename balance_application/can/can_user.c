@@ -229,21 +229,27 @@ void sen_flag_cap(uint8_t falg)
 //    HAL_CAN_AddTxMessage(&chassis_can, &gimbal_can_send_msg, gimbal_send_chassis_data, &send_mail_box);
 }
 
-void CAN_gimbal_send_chassis(gimbal_c_send_data_t *gimbal_send_data)
+void CAN_gimbal_send_chassis(const dt7_chassis_command_t *command)
 {
-	uint32_t send_mail_box;
-    gimbal_can_send_msg.StdId =  CAN2_send_chassis_msg;
-    gimbal_can_send_msg.IDE = CAN_ID_STD;  //标准ID(11位数)
-    gimbal_can_send_msg.RTR = CAN_RTR_DATA;  //请求（RTR）为数据帧
-    gimbal_can_send_msg.DLC = 0x08;  //八位数据位
-	gimbal_send_chassis_data[0] = (gimbal_send_data->x_rc_data>>8);
-    gimbal_send_chassis_data[1] = (gimbal_send_data->x_rc_data);
-    gimbal_send_chassis_data[2] = (gimbal_send_data->y_rc_data>>8);
-    gimbal_send_chassis_data[3] = (gimbal_send_data->y_rc_data);
-    gimbal_send_chassis_data[4] = ((gimbal_send_data->x_key_data<<6)&(3<<6))|((gimbal_send_data->y_key_data<<4)&(3<<4));  //剩余四位
-    gimbal_send_chassis_data[5] = ((gimbal_send_data->chassis_mode<<6)&(3<<6))|((gimbal_send_data->cap_mode<<5)&(1<<5))|((gimbal_send_data->top_mode<<4)&(1<<4))|((gimbal_send_data->follow_mode<<3)&(1<<3))|((gimbal_send_data->follow_mode_last<<2)&(1<<2))|((gimbal_send_data->key_control<<1)&(1<<1));  //剩余一位
-    gimbal_send_chassis_data[6] = (0);
-    gimbal_send_chassis_data[7] = (0);
+    uint32_t send_mail_box;
+    // 保留有符号摇杆量的二进制位型，再按高、低字节拆分。
+    const uint16_t forward = (uint16_t)command->forward;
+    const uint16_t lateral = (uint16_t)command->lateral;
+
+    gimbal_can_send_msg.StdId = CAN2_send_chassis_msg;
+    gimbal_can_send_msg.IDE = CAN_ID_STD;
+    gimbal_can_send_msg.RTR = CAN_RTR_DATA;
+    gimbal_can_send_msg.DLC = 8U;
+    gimbal_send_chassis_data[0] = (uint8_t)(forward >> 8U);
+    gimbal_send_chassis_data[1] = (uint8_t)forward;
+    gimbal_send_chassis_data[2] = (uint8_t)(lateral >> 8U);
+    gimbal_send_chassis_data[3] = (uint8_t)lateral;
+    gimbal_send_chassis_data[4] = 0U;  // 键盘行驶保留位
+    // 仅写原底盘模式和超电位。小陀螺、掉头及键盘使能位填零。
+    gimbal_send_chassis_data[5] = (uint8_t)(((command->drive_mode & 0x03U) << 6U) |
+                                            ((command->cap_mode & 0x01U) << 5U));
+    gimbal_send_chassis_data[6] = command->status_flags;
+    gimbal_send_chassis_data[7] = (uint8_t)command->joint_motion_request;  // DM 端按 int8_t 还原
     HAL_CAN_AddTxMessage(&chassis_can, &gimbal_can_send_msg, gimbal_send_chassis_data, &send_mail_box);
 }
 

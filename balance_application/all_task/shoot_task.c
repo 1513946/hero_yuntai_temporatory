@@ -1,4 +1,5 @@
 #include "shoot_task.h"
+#include "dt7_control.h"
 #include "stdlib.h"
 #include "user_lib.h"
 
@@ -9,9 +10,9 @@ fp32 shoot_lqr[5]= {0.0f,1500.0f,0.0f,1000.0f,0.0f};
 // 静态函数声明
 static void Shoot_Init(hero_shoot_t *shoot_init);                     // 射击系统初始化
 static void Shoot_Cacl_Loop(hero_shoot_t *shoot_cacl);                // 射击计算循环
-static void Shoot_Mode_Set(hero_shoot_t *shoot_mode);                 // 射击模式设置
+static void Shoot_Mode_Set(hero_shoot_t *shoot_mode, dt7_shoot_mode_t remote_mode);
 static void Shoot_Feedback_Updata(hero_shoot_t *shoot_feedback_updata); // 反馈数据更新
-static void Shoot_Control_Set(hero_shoot_t *shoot_control_set);       // 控制量设置
+static void Shoot_Control_Set(hero_shoot_t *shoot_control_set, dt7_shoot_mode_t remote_mode);
 
 static fp32 Motor_Ecd_To_Angle(uint16_t ecd,uint16_t ecd_zero_angle_set); // 电机编码值转角度
 static void shoot_speed_set(hero_shoot_t *shoot_speed_set);            // 射击速度控制
@@ -38,12 +39,14 @@ void Shoot_Task(void const * argument)
       Shoot_Feedback_Updata(&hero_shoot);
     while(1)
     {
-        // 设置射击模式
-        Shoot_Mode_Set(&hero_shoot);
-        // 更新反馈数据
+        dt7_control_snapshot_t remote;
+        // 本轮用同一份快照中的发射许可和遥控输入。
+        dt7_read_control_snapshot(&remote);
+        hero_shoot.remote_input = remote.input;
         Shoot_Feedback_Updata(&hero_shoot);
+        Shoot_Mode_Set(&hero_shoot, remote.shoot_mode);
         // 设置控制量
-        Shoot_Control_Set(&hero_shoot);
+        Shoot_Control_Set(&hero_shoot, remote.shoot_mode);
         // 计算循环
         Shoot_Cacl_Loop(&hero_shoot);
          
@@ -51,6 +54,7 @@ void Shoot_Task(void const * argument)
        CAN_cmd_shoot(hero_shoot.shoot_motor_1.give_current,hero_shoot.shoot_motor_2.give_current,hero_shoot.shoot_motor_3.give_current);
        //tem_shoot_current = hero_shoot.trigger_motor.give_current=1000.0f;
        abs_limit(&hero_shoot.trigger_motor.give_current, 10000.0f);
+        // 停止拨弹时仍发 CAN2 0x200，普通行驶的底盘跟随要用其中的 yaw 编码器值。
 		CAN_cmd_trigger(hero_shoot.trigger_motor.give_current, mini_gimbal.yaw_gimbal_motor.gimbal_motor_measure->ecd);
 
         
@@ -65,8 +69,6 @@ void Shoot_Task(void const * argument)
   */
 static void Shoot_Init(hero_shoot_t *shoot_init)
 {
-    // 获取遥控器数据指针
-    shoot_init->shoot_dt7_remote_control = get_dt7_remote_control_point();
     // 获取射击电机测量数据指针
     shoot_init->shoot_motor_1.shoot_motor_measure = get_motor_gimbal_fire_right_measure_point();
     shoot_init->shoot_motor_2.shoot_motor_measure = get_motor_gimbal_fire_left_measure_point();
@@ -112,21 +114,30 @@ static void Shoot_Init(hero_shoot_t *shoot_init)
   * @brief 射击模式设置
   * @param shoot_mode: 射击系统结构体指针
   */
-static void Shoot_Mode_Set(hero_shoot_t *shoot_mode)
+static void Shoot_Mode_Set(hero_shoot_t *shoot_mode, dt7_shoot_mode_t remote_mode)
 {
-    // 比赛模式（右拨杆上）
-    if(switch_is_up(shoot_mode->shoot_dt7_remote_control->rc.s[RIGHT]))
+    // 失联、档位切换等待和爬阶等情况下，优先撤销许可并清除旧比赛档状态。
+    if (remote_mode == DT7_SHOOT_BLOCKED)
+    {
+        shoot_mode->shoot_mode = SHOOT_STOP;
+        shoot_mode->fire_flag_change = 0U;
+        shoot_mode->fire_flag_time = 0U;
+        return;
+    }
+
+    // 左上 + 右上保留比赛档按键逻辑。
+    if (remote_mode == DT7_SHOOT_COMPETITION)
     {
         // 按键触发射击模式切换（有防抖延时）
-        if(shoot_mode->shoot_dt7_remote_control->key.v & FIRE_ON && 
-           shoot_mode->fire_flag_change == 0 && 
+        if ((shoot_mode->remote_input.key.v & DT7_COMPETITION_TOGGLE_KEY) != 0U &&
+            shoot_mode->fire_flag_change == 0 &&
            shoot_mode->fire_flag_time >= 500)
         {
             shoot_mode->fire_flag_change = 1;
             shoot_mode->shoot_mode = SHOOT_START;  // 启动射击
             shoot_mode->fire_flag_time = 0;
         }
-        else if(shoot_mode->shoot_dt7_remote_control->key.v & FIRE_ON && 
+        else if ((shoot_mode->remote_input.key.v & DT7_COMPETITION_TOGGLE_KEY) != 0U &&
                 shoot_mode->fire_flag_change == 1 && 
                 shoot_mode->fire_flag_time >= 500)
         {
@@ -145,18 +156,9 @@ static void Shoot_Mode_Set(hero_shoot_t *shoot_mode)
             shoot_mode->fire_flag_time = 1000;
         }
     }
-    else  // 调试模式
+    else
     {
-        // 左拨杆上为启动射击
-        if(switch_is_up(shoot_mode->shoot_dt7_remote_control->rc.s[LEFT])  ||  (switch_is_down(shoot_mode->shoot_dt7_remote_control->rc.s[LEFT])&&(switch_is_down(shoot_mode->shoot_dt7_remote_control->rc.s[RIGHT]))))
-        {  
-            shoot_mode->shoot_mode = SHOOT_START;
-        }
-				
-        else
-        {
-            shoot_mode->shoot_mode = SHOOT_STOP;
-        }
+        shoot_mode->shoot_mode = SHOOT_START;
     }
 }
 
@@ -182,7 +184,7 @@ static void Shoot_Feedback_Updata(hero_shoot_t *shoot_feedback_updata)
     
     // 鼠标按键状态
     shoot_feedback_updata->last_press_r = shoot_feedback_updata->last_press_l;
-    shoot_feedback_updata->press_l = shoot_feedback_updata->shoot_dt7_remote_control->mouse.press_l;
+    shoot_feedback_updata->press_l = shoot_feedback_updata->remote_input.mouse.press_l;
     
     // 拨弹盘编码器数据处理
     float fix_dials_ecd = (float)shoot_feedback_updata->trigger_motor.trigger_motor_measure->ecd;
@@ -207,7 +209,7 @@ static void Shoot_Feedback_Updata(hero_shoot_t *shoot_feedback_updata)
   * @brief 控制量设置
   * @param shoot_control_set: 射击系统结构体指针
   */
-static void Shoot_Control_Set(hero_shoot_t *shoot_control_set)
+static void Shoot_Control_Set(hero_shoot_t *shoot_control_set, dt7_shoot_mode_t remote_mode)
 {
     // 射击停止模式
     if(shoot_control_set->shoot_mode == SHOOT_STOP)
@@ -217,11 +219,27 @@ static void Shoot_Control_Set(hero_shoot_t *shoot_control_set)
         shoot_control_set->shoot_motor_2.speed_set = 0;
         shoot_control_set->shoot_motor_3.speed_set = 0;
         
-        // 拨弹电机速度控制
-        shoot_control_set->trigger_motor.give_current = 
-            pid_calc(&shoot_control_set->trigger_motor.speed_pid, 
-                    shoot_control_set->trigger_motor.feedback_speed,
-                    shoot_control_set->trigger_motor.trigger_motor_speed_set);
+        // 停止拨弹并清掉未完成的动作，恢复后从当前角度开始。
+        shoot_control_set->trigger_motor.give_current = 0;
+        shoot_control_set->trigger_motor.trigger_motor_speed_set = 0;
+        shoot_control_set->trigger_motor.trigger_motor_angle_set = shoot_control_set->trigger_motor.add_angle;
+        shoot_control_set->trigger_motor.shoot_ban_time_hz = 0U;
+        shoot_control_set->trigger_motor.fire_ban_hz = 0U;
+        shoot_control_set->trigger_motor.fire_power_flag = 0U;
+        shoot_control_set->trigger_motor.tigger_bolck.block_time = 0U;
+        shoot_control_set->trigger_motor.tigger_bolck.reverse_time = 0U;
+
+        if (remote_mode == DT7_SHOOT_BLOCKED)
+        {
+            // 禁用发射的档位直接发送零电流，清掉旧的增量 PID 输出。
+            pid_clear(&shoot_control_set->shoot_motor_1.pid_shoot_speed);
+            pid_clear(&shoot_control_set->shoot_motor_2.pid_shoot_speed);
+            pid_clear(&shoot_control_set->shoot_motor_3.pid_shoot_speed);
+            shoot_control_set->shoot_motor_1.give_current = 0;
+            shoot_control_set->shoot_motor_2.give_current = 0;
+            shoot_control_set->shoot_motor_3.give_current = 0;
+            return;
+        }
     }
     else  // 射击启动模式
     {
@@ -299,7 +317,7 @@ static fp32 Motor_Ecd_To_Angle(uint16_t ecd, uint16_t ecd_zero_angle_set)
   */
 static void shoot_speed_set(hero_shoot_t *shoot_speed_set)
 {
-  if((switch_is_up(shoot_speed_set->shoot_dt7_remote_control->rc.s[LEFT])))  // 设置摩擦轮电机目标速度
+  if((switch_is_up(shoot_speed_set->remote_input.rc.s[DT7_SWITCH_LEFT])))  // 设置摩擦轮电机目标速度
 	{shoot_speed_set->shoot_motor_1.speed_set =-1000;  // 右摩擦轮
     shoot_speed_set->shoot_motor_2.speed_set = 1000;   // 左摩擦轮
     shoot_speed_set->shoot_motor_3.speed_set = 1000;   // 下摩擦轮
@@ -323,7 +341,7 @@ static void shoot_power_set(hero_shoot_t *shoot_speed_set)
     shoot_speed_set->trigger_motor.fire_power_flag = 1;
     
     // 根据按键设置射击频率
-    if(switch_is_up(shoot_speed_set->shoot_dt7_remote_control->rc.s[LEFT]))
+    if(switch_is_up(shoot_speed_set->remote_input.rc.s[DT7_SWITCH_LEFT]))
     {
         shoot_speed_set->trigger_motor.shoot_ban_hz = 1000; // 普通射击模式
     }
@@ -342,7 +360,7 @@ static void shoot_bullet_control(hero_shoot_t *shooot_bullet_control)
 {
     // 射击触发条件判断：鼠标左键或遥控器通道4或自动射击模式
     if(((shooot_bullet_control->press_l == 1) || 
-        shooot_bullet_control->shoot_dt7_remote_control->rc.ch[4] >= 300 || 
+        shooot_bullet_control->remote_input.rc.ch[DT7_CHANNEL_THUMBWHEEL] >= 300 ||
         (shooot_bullet_control->gimbal->hero_pc->pc_fire_mode == 2 && 
          shooot_bullet_control->gimbal->gimbal_mode == GIMBAL_AUTO)) && 
        (shooot_bullet_control->trigger_motor.shoot_ban_time_hz == 0) && 
@@ -372,7 +390,7 @@ static void shoot_bullet_control(hero_shoot_t *shooot_bullet_control)
     // 设置拨弹电机目标角度
     if(shooot_bullet_control->trigger_motor.fire_ban_hz == 1)
     {
-         if(switch_is_up(shooot_bullet_control->shoot_dt7_remote_control->rc.s[LEFT]))
+         if(switch_is_up(shooot_bullet_control->remote_input.rc.s[DT7_SWITCH_LEFT]))
         // 控制拨弹盘旋转一个弹仓位置（40度）
        { 
       
@@ -388,7 +406,7 @@ static void shoot_bullet_control(hero_shoot_t *shooot_bullet_control)
         //             shooot_bullet_control->trigger_motor.add_angle - need_angle;
         //     }
 		}
-		else if (switch_is_down(shooot_bullet_control->shoot_dt7_remote_control->rc.s[LEFT]))
+		else if (switch_is_down(shooot_bullet_control->remote_input.rc.s[DT7_SWITCH_LEFT]))
 		{
 					
             shooot_bullet_control->trigger_motor.trigger_motor_angle_set += need_angle;
@@ -432,7 +450,7 @@ static void trigger_motor_turn_back(hero_shoot_t *shoot_block)
     {
         if(shoot_block->trigger_motor.tigger_bolck.reverse_time == 1)
         {  
-            if(switch_is_up(shoot_block->shoot_dt7_remote_control->rc.s[LEFT]))
+            if(switch_is_up(shoot_block->remote_input.rc.s[DT7_SWITCH_LEFT]))
             // 设置反转角度
            { shoot_block->trigger_motor.trigger_motor_angle_set = 
                 shoot_block->trigger_motor.add_angle + block_need_angle;}
