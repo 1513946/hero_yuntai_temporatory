@@ -118,7 +118,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
             get_9025_motor_measure(&motor_gimbal[5],rx_data);
             break;
         }
-			 case CAN1_trigger_motor_id:  //201
+		case CAN1_trigger_motor_id:  //201
         {
             get_motor_measure(&motor_gimbal[4],rx_data);
             break;

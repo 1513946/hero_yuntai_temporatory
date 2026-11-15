@@ -300,9 +300,9 @@ static fp32 Motor_Ecd_To_Angle(uint16_t ecd, uint16_t ecd_zero_angle_set)
 static void shoot_speed_set(hero_shoot_t *shoot_speed_set)
 {
   if((switch_is_up(shoot_speed_set->shoot_dt7_remote_control->rc.s[LEFT])))  // 设置摩擦轮电机目标速度
-	{shoot_speed_set->shoot_motor_1.speed_set =4200;  // 右摩擦轮
-    shoot_speed_set->shoot_motor_2.speed_set = -4200;   // 左摩擦轮
-    shoot_speed_set->shoot_motor_3.speed_set = 4100;   // 下摩擦轮
+	{shoot_speed_set->shoot_motor_1.speed_set =-1000;  // 右摩擦轮
+    shoot_speed_set->shoot_motor_2.speed_set = 1000;   // 左摩擦轮
+    shoot_speed_set->shoot_motor_3.speed_set = 1000;   // 下摩擦轮
 	}
 	else
 	{
